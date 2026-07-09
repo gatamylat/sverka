@@ -1,0 +1,4733 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Сверка данных 1С – анализ отклонений</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#1565c0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+
+  <!-- Montserrat -->
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <style>
+    *{box-sizing:border-box;font-family:'Montserrat',sans-serif}
+    body{margin:0;padding:50px;background:#f5f5f5;color:#333}
+
+    /* cards */
+    .card{background:#fff;border-radius:8px;padding:20px;margin-bottom:16px;box-shadow:0 2px 4px rgba(0,0,0,.05)}
+    h2{margin:0 0 4px;font-size:20px}
+
+    /* small grey hints */
+    .hint{font-size:12px;color:#666;margin:4px 0 0}
+
+    /* inputs / buttons */
+    input[type=number]{width:90px;text-align:right}
+    button{background:#2196f3;color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:13px}
+    button.small{padding:2px 6px;font-size:12px}
+    button.danger{background:transparent;color:#f44336}
+    button.danger:hover{background:rgba(244,67,54,.1)}
+    button:disabled{opacity:.5}
+
+    /* tables */
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+    th,td{border:1px solid #ddd;padding:4px 6px;text-align:right}
+    th:first-child,td:first-child{text-align:left}
+    tr.new-row{background:#e0f7fa}
+    tr.deleted-row{text-decoration:line-through;background:#ffebee}
+    /* Удаленные на вкладке "Коэффициенты": убираем перечеркивание */
+#coefView #coefDeletedContent tr.deleted-row {
+  text-decoration: none;
+}
+
+    td.modified-cell{background:#fff9c4}
+    tr.summary-row{background:#eef2f7;font-weight:500}
+
+    .neg{background:#ff5252;color:#fff}
+    .nocost{background:#ffe0b2}
+    .cell-edit{width:100%;border:1px solid #2196f3;border-radius:4px;padding:2px;text-align:right}
+    .hidden{display:none}
+
+    /* chart */
+    canvas{background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.05);margin-top:12px;display: block;}
+    /* одинаковая ширина графиков */
+    .fixed-chart { width: 1000px; max-width: 100%; }
+
+    /* legend */
+    .legend{list-style:none;padding:0;margin:0;display:flex;gap:16px;font-size:13px}
+    .legend li{display:flex;align-items:center;gap:4px}
+    .box{display:inline-block;width:16px;height:16px;border:1px solid #ccc;border-radius:3px}
+    .box.new{background:#e0f7fa}.box.deleted{background:#ffebee}
+    .box.modified{background:#fff9c4;border-color:#f7d54d}
+    .box.nocost{background:#ffe0b2}.box.neg{background:#ff5252}
+
+    /* reusable table blocks */
+    .tbl-wrap{margin-top:10px;border:1px solid #ddd;border-radius:6px;padding:10px;background:#fafafa}
+    .tbl-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px}
+    .tbl-head input[type="range"]{flex:1}
+    .tbl-head input[type="number"]{width:120px}
+    /* ---------- PF styles ---------- */
+     /* только в Планфиксе */
+    tr.pf-onlyPf    { background: #ccffcc; }      /* только в ПФ */
+   /* совпадение (delta < threshold) */
+    tr.pf-match-row { background: #e0ffe0; }      /* данные одинаковы */
+    tr.pf-diff-row { background:#f0f4ff; }      /* расхождение */
+    tr.pf-only1c   { background:#ffeecc; }      /* есть только в 1С */
+    tr.pf-resolved { text-decoration:line-through;color:#999; }
+   /* «значительный слайдер» наследует существующие .tbl-head */
+    /* history view */
+    #contractList li{cursor:pointer;padding:4px;border-radius:4px}
+    #contractList li:hover{background:#e0e0e0}
+    #contractList li.active{background:#2196f3;color:#fff}
+    .tbl-body{max-height:260px;overflow:auto}
+    .tbl-body table{min-width:720px}
+    #topNav{
+  position:fixed;
+  top:0; left:0;
+  width:100%;
+  background:#ffffff;
+  padding:8px 20px;
+  box-shadow:0 2px 4px rgba(0,0,0,.08);
+  z-index:1000;
+}
+/* Стиль для красной точки индикатора */
+.indicator-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background-color: #ff0000;
+  border-radius: 50%;
+  margin: 0 auto;
+}
+
+/* Узкая колонка индикатора в таблице истории договора */
+th.col-ind, td.col-ind { width: 36px; text-align: center; }
+
+
+/* Margin colors for coefficients */
+.margin-high{background:#4caf50;color:#fff}
+.margin-good{background:#8bc34a;color:#fff}
+.margin-ok{background:#ff9800;color:#fff}
+.margin-low{background:#f44336;color:#fff}
+tr.coef-changed{background:#fff9c4}
+
+/* Delta bubbles near coefficients */
+.delta-pos  { color:#2e7d32; font-weight:600; margin-left:4px; }
+.delta-neg  { color:#c62828; font-weight:600; margin-left:4px; }
+.delta-zero { color:#666;    font-weight:600; margin-left:4px; }
+
+
+/* Архив импортов коэффициентов - компактный вид */
+.coef-import-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-size: 13px;
+}
+
+.coef-import-item:nth-child(even) {
+  background: #f5f5f5;
+}
+
+.coef-import-item:hover {
+  background: #e3f2fd !important;
+}
+
+.coef-import-item.active {
+  background: #e3f2fd !important;
+  border-left: 3px solid #2196f3;
+  padding-left: 5px;
+}
+
+.coef-import-item span {
+  color: #666;
+  font-size: 12px;
+}
+
+/* Подсветка изменений коэффициентов */
+.coef-increased {
+  background: #c8e6c9 !important;
+}
+
+.coef-decreased {
+  background: #ffcdd2 !important;
+}
+
+.coef-new {
+  background: #e0f7fa !important;
+}
+
+/* Сворачиваемая секция */
+.collapsible-section {
+  margin-top: 20px;
+  border-top: 2px solid #e0e0e0;
+  padding-top: 10px;
+}
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  padding: 8px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  user-select: none;
+}
+
+.collapsible-header:hover {
+  background: #eeeeee;
+}
+
+.collapsible-content {
+  display: block;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.collapsible-content.collapsed {
+  display: none;
+}
+
+.toggle-icon {
+  font-size: 20px;
+  color: #666;
+  transition: transform 0.3s;
+}
+
+.toggle-icon.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* ---------- СТИЛИ СПРАВОЧНИКА ДОГОВОРОВ ---------- */
+#directoryView {
+  padding: 20px;
+  background: #f5f5f5;
+  min-height: 100vh;
+}
+
+.directory-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.compact-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 20px;
+  font-size: 13px;
+}
+
+.contract-name-col {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #555;
+}
+
+.contract-comment-col {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #999;
+  font-style: italic;
+}
+
+.contract-full-info {
+  cursor: help;
+  border-bottom: 1px dotted #999;
+}
+
+.mismatches-report {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 4px;
+  padding: 10px;
+  margin: 10px 0;
+}
+
+.mismatches-report h3 {
+  margin: 0 0 10px;
+  color: #856404;
+  font-size: 14px;
+}
+
+.mismatch-item {
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.mismatch-new {
+  color: #155724;
+  background: #d4edda;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-bottom: 2px;
+}
+
+.mismatch-missing {
+  color: #721c24;
+  background: #f8d7da;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-bottom: 2px;
+}
+
+/* Стили для таблицы справочника */
+.directory-search {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.directory-add-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.directory-add-form input {
+  padding: 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.directory-add-form input:nth-child(1) { flex: 0 0 100px; }
+.directory-add-form input:nth-child(2) { flex: 2; }
+.directory-add-form input:nth-child(3) { flex: 1; }
+
+.dir-table {
+  width: 100%;
+  background: white;
+  border-collapse: collapse;
+}
+
+.dir-table th,
+.dir-table td {
+  padding: 8px;
+  border: 1px solid #ddd;
+  text-align: left;
+}
+
+.dir-table th {
+  background: #f0f0f0;
+}
+
+.dir-table td[contenteditable="true"] {
+  cursor: text;
+  background: #f9f9f9;
+}
+
+.dir-table td[contenteditable="true"]:hover {
+  background: #fff3cd;
+}
+
+.directory-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.directory-controls button {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+}
+
+.directory-controls button:hover {
+  background: #f0f0f0;
+}
+
+
+.filter-controls {
+  display: flex;
+  gap: 10px;
+  margin: 10px 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.filter-controls input[type="number"] {
+  width: 100px;
+  padding: 4px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+/* светло-серый акцент для вычисляемых колонок */
+/* Таблица Отчета по заказам: не переносим содержимое ячеек, чтобы числа оставались в одну строку */
+.dash-report-table th,
+.dash-report-table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 6px 8px;
+}
+/* Компактный режим только для таблицы отчёта на Дашборде */
+.dash-report-table.compact-mode td.contract-name-col { max-width: 180px; }
+.dash-report-table.compact-mode td.contract-comment-col { max-width: 120px; }
+/* Узкая первая колонка "Номер" в компактном режиме */
+.dash-report-table.compact-mode td:nth-child(1),
+.dash-report-table.compact-mode th:nth-child(1) { width: 90px; }
+
+
+/* Убедимся, что contract-name-col и contract-comment-col сохраняют стиль (в других таблицах) */
+.dash-report-table td.contract-name-col { 
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #555;
+}
+.dash-report-table td.contract-comment-col {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #999;
+  font-style: italic;
+}
+
+/* Приоритет подсветок над серым фоном (если понадобится) */
+.dash-report-table td.col-gray.modified-cell {
+  background: #fff9c4 !important;
+  color: inherit !important;
+}
+.dash-report-table td.col-gray.neg {
+  background: #ff5252 !important;
+  color: #fff !important;
+}
+
+th.col-gray, td.col-gray {
+  background: #f1f1f1;      /* чуть темнее общего фона */
+    color: #000;               /* по умолчанию — чёрный текст */
+}
+
+/* Если ячейка с серым фоном изменена — желтая подсветка должна иметь приоритет */
+td.col-gray.modified-cell {
+  background: #fff9c4 !important; /* модифицированное значение (жёлтый) */
+  color: inherit !important;
+}
+
+/* Если ячейка с серым фоном — отрицательное значение, то красная подсветка имеет приоритет */
+td.col-gray.neg {
+  background: #ff5252 !important; /* красный фон для отрицательных чисел */
+  color: #fff !important;
+}
+
+/* 3.8 — Пустые состояния */
+.empty-state {
+  color: #999;
+  font-size: 13px;
+  text-align: center;
+  padding: 16px 8px;
+}
+
+/* Фикс 1 — sticky внутри скроллируемого #histTable должен быть top:0 */
+#histTable thead th,
+#histTable table > tr:first-child th { top: 0; background: #f5f5f5; z-index: 2; }
+
+/* Компактная таблица на экране История */
+#histTable table { font-size: 12px; }
+#histTable th, #histTable td { padding: 3px 6px; white-space: nowrap; }
+
+/* Фикс 4 — скрытие завершённых/удалённых строк */
+body.hide-deleted tr.deleted-row,
+body.hide-deleted tr[data-status="deleted"] { display: none; }
+
+/* Оставляем заголовки серыми */
+th.col-gray { background: #f3f3f3; color: #000; }
+
+/* Фикс 1 — подсветка строк в архиве импортов */
+.imp-head:hover { background: #f5f9ff !important; cursor: pointer; }
+
+/* Фикс 3 — кнопки справочника: явный цвет текста */
+.directory-controls button { color: #333; }
+
+/* 3.3 — Sticky-шапки таблиц */
+thead th, table > tr:first-child th {
+  position: sticky;
+  top: 48px;
+  z-index: 10;
+  background: #fff;
+}
+
+/* 3.4 — Hover-подсветка строк */
+tbody tr:hover { background: #f5f9ff !important; }
+
+/* 3.6 — Компенсация фиксированного topNav */
+body { padding-top: 70px; }
+
+/* ═══ РИСКИ ═══ */
+.risk-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;margin:1px 3px 1px 0;color:#fff;white-space:nowrap}
+.risk-neg{background:#c62828}
+.risk-overrun{background:#e65100}
+.risk-stale{background:#6a1b9a}
+.risk-nocost{background:#757575}
+.risk-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:13px;background:#f5f5f5;margin-right:8px;margin-bottom:6px;cursor:pointer;user-select:none;border:2px solid transparent}
+.risk-chip.active{border-color:#2196f3;background:#e3f2fd}
+.risk-chip .cnt{font-weight:700;font-size:15px}
+.risk-settings label{display:inline-flex;align-items:center;gap:6px;margin-right:16px;font-size:13px}
+.risk-settings input[type=number]{width:70px;padding:3px 6px}
+
+/* ═══ ИИ-АНАЛИЗ ═══ */
+.ai-persona{border:1px solid #e0e0e0;border-radius:8px;padding:14px 16px;margin-bottom:14px;background:#fafafa}
+.ai-persona h3{margin:0 0 4px;font-size:16px}
+.ai-persona .hint{margin-bottom:8px}
+.ai-prompt-toggle{cursor:pointer;font-size:13px;color:#1565c0;user-select:none}
+.ai-prompt-wrap{display:none;margin:8px 0}
+.ai-prompt-wrap.open{display:block}
+.ai-prompt-wrap textarea{width:100%;min-height:140px;font-family:monospace;font-size:12px;padding:8px;border:1px solid #ccc;border-radius:6px;resize:vertical;box-sizing:border-box}
+.ai-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ai-period{display:inline-flex;border:1px solid #ccc;border-radius:6px;overflow:hidden}
+.ai-period button{border:none;background:#fff;padding:5px 12px;font-size:13px;cursor:pointer}
+.ai-period button.active{background:#1565c0;color:#fff}
+.ai-run{background:#1565c0;color:#fff;border:none;border-radius:6px;padding:7px 18px;font-size:14px;cursor:pointer}
+.ai-run:disabled{background:#90a4ae;cursor:wait}
+.ai-result{margin-top:10px;padding:12px;background:#fff;border:1px solid #e0e0e0;border-radius:6px;font-size:14px;line-height:1.55;white-space:pre-wrap;display:none}
+.ai-result.show{display:block}
+.ai-spinner{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:aispin .7s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes aispin{to{transform:rotate(360deg)}}
+.ai-meta{font-size:11px;color:#999;margin-top:6px}
+
+/* ═══ DRAG-N-DROP ═══ */
+#dropOverlay{position:fixed;inset:0;background:rgba(21,101,192,.10);z-index:9999;display:none;align-items:center;justify-content:center;pointer-events:none}
+#dropOverlay.on{display:flex}
+#dropOverlay .inner{border:3px dashed #1565c0;border-radius:16px;padding:40px 60px;font-size:22px;color:#1565c0;background:rgba(255,255,255,.9)}
+
+/* ═══ СПАРКЛАЙНЫ ═══ */
+td.spark-cell{padding:2px 6px !important;vertical-align:middle}
+td.spark-cell canvas{display:block}
+
+  </style>
+</head>
+<body>
+<!-- Навигация -->
+<div id="topNav" style="margin-bottom:12px;">
+  <a href="#" id="linkMain">Главная</a> |
+  <a href="#history" id="linkHist">История</a> |
+  <a href="#pf" id="linkPf">Сверка с ПФ</a> |
+  <a href="#coefficients" id="linkCoef">Коэффициенты</a> |
+  <a href="#directory" id="linkDir">Справочник договоров</a> |
+  <a href="#dashboard" id="linkDash">Дашборд</a> |
+  <a href="#risks" id="linkRisks">⚠️ Риски</a> |
+  <a href="#ai" id="linkAi">🤖 ИИ-анализ</a>
+  <label id="hideDeletedLabel" style="margin-left:16px;font-size:13px;color:#666;cursor:pointer;user-select:none;">
+    <input type="checkbox" id="chkHideDeleted" style="margin-right:4px;">скрыть завершённые
+  </label>
+</div>
+<div id="dropOverlay"><div class="inner">📥 Отпустите CSV — подхвачу</div></div>
+<!-- Загрузка -->
+<div class="card">
+  <h2>Загрузка данных</h2>
+  <p class="hint">Загрузите новую выгрузку CSV из 1С и укажите коэффициент косвенных затрат. Можно просто перетащить CSV-файл в любое место окна — дата подставится из имени файла или сегодняшняя.</p>
+  <label>Коэффициент косвенных затрат:
+    <input type="number" id="coef" value="0.70" step="0.01" min="0">
+  </label>
+  <label>Данные актуальны на:
+    <input type="date" id="impDate">
+  </label>
+  <input type="file" id="file" accept=".csv">
+  <button id="btnLoad" disabled>Загрузить CSV</button>
+  <button id="btnUndo">↶ Откат</button>
+
+  <p class="hint" style="margin-top:8px">
+    Файл должен быть сохранён из Excel в формате CSV (разделитель – точка с запятой).<br>
+    Шапка: Номер;СуммаЗаказа;СуммаОплат;ОстатокОплат;ССПред;ССПлан;ССФакт;Дизайнер;Безнал
+  </p>
+</div>
+
+<!-- Легенда -->
+<div class="card">
+  <h2>Легенда выделений</h2>
+  <p class="hint">Объясняет цветовое выделение новых, удалённых и изменённых данных.</p>
+  <ul class="legend">
+    <li><span class="box new"></span> Новая строка</li>
+    <li><span class="box deleted"></span> Удалённая строка</li>
+    <li><span class="box modified"></span> Изменённая ячейка</li>
+    <li><span class="box nocost"></span> Нет плановой себестоимости</li>
+    <li><span class="box neg"></span> Отрицательное значение</li>
+  </ul>
+</div>
+
+<!-- current -->
+<div id="currentCard" class="card hidden">
+  <h2 id="currentTitle"></h2>
+  <div id="tblCurrent"></div>
+</div>
+
+<!-- архив -->
+<div class="card">
+  <h2>Архив импортов</h2>
+  <p class="hint">Список всех загрузок. Нажмите «Импорт от…» — откроются детали, подсветка и анализ.</p>
+  <div id="archList"></div>
+</div>
+
+<!-- history -->
+<div class="card">
+  <h2>История импортов (итоги)</h2>
+  <p class="hint">Сводные показатели по каждому импорту и динамика по каждому показателю на графике.</p>
+
+  <!-- toggles -->
+  <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:6px">
+  <label style="display:flex;align-items:center;gap:4px;font-size:13px">
+    <input type="checkbox" class="chk" data-s="bal" checked>
+    <span style="display:inline-block;width:14px;height:14px;background:#4caf50;border-radius:2px"></span> Остаток
+  </label>
+
+  <label style="display:flex;align-items:center;gap:4px;font-size:13px">
+    <input type="checkbox" class="chk" data-s="dir" checked>
+    <span style="display:inline-block;width:14px;height:14px;background:#ff9800;border-radius:2px"></span> Прямые
+  </label>
+
+  <label style="display:flex;align-items:center;gap:4px;font-size:13px">
+    <input type="checkbox" class="chk" data-s="ind" checked>
+    <span style="display:inline-block;width:14px;height:14px;background:#9c27b0;border-radius:2px"></span> Косвенные
+  </label>
+
+  <label style="display:flex;align-items:center;gap:4px;font-size:13px">
+    <input type="checkbox" class="chk" data-s="sal" checked>
+    <span style="display:inline-block;width:14px;height:14px;background:#2196f3;border-radius:2px"></span> Сальдо
+  </label>
+
+  <!-- НОВЫЕ ЧЕКБОКСЫ -->
+  <label style="display:flex;align-items:center;gap:4px;font-size:13px">
+    <input type="checkbox" class="chk" data-s="ssb">
+    <span style="display:inline-block;width:14px;height:14px;background:#06f432;border-radius:2px"></span> СС (план/пред)
+  </label>
+
+  <label style="display:flex;align-items:center;gap:4px;font-size:13px">
+    <input type="checkbox" class="chk" data-s="ssf">
+    <span style="display:inline-block;width:14px;height:14px;background:#f805bb;border-radius:2px"></span> СС факт
+  </label>
+
+  <button id="btnRefresh" class="small" style="margin-left:auto">Обновить</button>
+</div>
+
+
+  <div id="tblHist"></div>
+  <canvas id="canvas" width="1000" height="360"></canvas>
+</div>
+
+<!-- ПАНЕЛЬ ИСТОРИИ -->
+<section id="historyView" style="display:none;position:fixed;top:44px;left:0;width:100%;height:calc(100% - 44px);z-index:1001;flex-direction:column;background:#fff;box-sizing:border-box;">
+  <header style="display:flex;align-items:center;padding:6px 10px;background:#fff;border-bottom:1px solid #e0e0e0;flex-shrink:0;gap:8px;">
+    <button id="btnBack" style="padding:3px 10px;font-size:12px;">← Назад</button>
+    <span style="font-size:14px;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">История: <span id="histTitle"></span></span>
+    <button id="btnToggleChart" class="small" style="font-size:11px;padding:2px 8px;">📊 скрыть</button>
+    <button id="btnCsv" class="small" style="font-size:11px;padding:2px 8px;">CSV ⬳</button>
+  </header>
+
+  <div style="display:flex;flex:1;min-height:0;">
+    <!-- sidebar -->
+    <aside id="contractList" style="width:120px;border-right:1px solid #e0e0e0;padding:6px;overflow-y:auto;flex-shrink:0;">
+      <input id="searchNum" placeholder="Поиск №…" style="width:100%;margin-bottom:6px;font-size:12px;padding:3px;">
+      <label style="display:block;margin-bottom:6px;font-size:12px;">
+        <input type="checkbox" id="chkActiveOnly"> Текущие
+      </label>
+      <ul id="nums" style="list-style:none;padding:0;margin:0;font-size:12px;"></ul>
+    </aside>
+
+    <!-- main -->
+    <main style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;padding:0 12px 0 12px;background:#fff;">
+      <div id="histTable" style="flex:1;overflow:auto;min-height:0;"></div>
+
+      <!-- диаграмма — скрываемый блок -->
+      <div id="chartPanel" style="flex-shrink:0;border-top:1px solid #e0e0e0;">
+        <div id="fieldToggles" style="display:flex;gap:6px;flex-wrap:wrap;padding:4px 6px;font-size:11px;"></div>
+        <canvas id="histChart" class="fixed-chart" width="1000" height="180" style="display:block;"></canvas>
+      </div>
+    </main>
+  </div>
+</section>
+
+<!-- ============ СПРАВОЧНИК ДОГОВОРОВ ============ -->
+<section id="directoryView" style="display:none;">
+  <div class="directory-container">
+    <!-- Заголовок и поиск -->
+    <div class="card">
+      <h2>Справочник договоров</h2>
+      <p class="hint">Управление наименованиями и примечаниями договоров</p>
+      <input type="text" class="directory-search" id="dirSearch" placeholder="Поиск по ID, названию или примечанию...">
+    </div>
+
+    <!-- Форма добавления -->
+    <div class="card">
+      <h2>Добавить договор</h2>
+      <div class="directory-add-form">
+        <input type="text" id="dirNewId" placeholder="ID (23-01-01)" maxlength="10">
+        <input type="text" id="dirNewName" placeholder="Наименование договора">
+        <input type="text" id="dirNewComment" placeholder="Примечание">
+        <button onclick="addContractToDirectory()" class="small">Добавить</button>
+      </div>
+    </div>
+
+    <!-- Отчет о несоответствиях -->
+    <div id="mismatchesReport" class="mismatches-report" style="display:none;">
+      <h3>Отчет о несоответствиях последнего импорта</h3>
+      <div id="mismatchesList"></div>
+    </div>
+
+    <!-- Таблица справочника -->
+    <div class="card">
+      <h2>Список договоров</h2>
+      <div class="directory-controls">
+        <button onclick="importDirectoryCSV()">Импорт CSV</button>
+        <button onclick="exportDirectoryCSV()">Экспорт CSV</button>
+        <button onclick="exportDirectoryJSON()">Экспорт JSON</button>
+        <button onclick="importDirectoryJSON()">Импорт JSON</button>
+        <button onclick="clearDirectory()" style="color: #e74c3c;">Очистить справочник</button>
+      </div>
+      <input type="file" id="dirFileInput" accept=".csv,.json" style="display:none;">
+      
+      <table class="dir-table" id="directoryTable">
+        <thead>
+          <tr>
+            <th style="width:100px;">ID</th>
+            <th>Наименование</th>
+            <th style="width:200px;">Примечание</th>
+            <th style="width:50px;">Действие</th>
+          </tr>
+        </thead>
+        <tbody id="directoryTableBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Статистика -->
+    <div class="card">
+      <h2>Статистика справочника</h2>
+      <p id="dirStats" style="font-size:13px;color:#666;"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DASHBOARD ============ -->
+<section id="dashboardView" style="display:none;">
+  <div class="card">
+    <h2>Договоры с ССФакт ≤ 100'000 и СуммаОплат > 100'000</h2>
+    <p class="hint">Список договоров, у которых по факту себестоимость отсутствует, но уже есть оплаты.</p>
+    <div style="margin-bottom:8px">
+      <button id="btnDashRefresh" class="small">Обновить</button>
+      <button id="btnDashCsv" class="small" style="margin-left:8px">CSV ⬳</button>
+    </div>
+
+    <div id="dashTableWrap"></div>
+  </div>
+</section>
+
+<!-- ============ РИСКИ ============ -->
+<section id="risksView" style="display:none;">
+  <div class="card">
+    <h2>⚠️ Риски по договорам</h2>
+    <p class="hint">Автоматический отбор проблемных договоров из последнего импорта. Клик по счётчику — фильтр по категории.</p>
+
+    <div class="risk-settings" style="margin:10px 0;">
+      <label>Порог перерасхода СС, %:
+        <input type="number" id="riskOverrunPct" min="0" step="1" value="10">
+      </label>
+      <label>Без движения оплат, дней:
+        <input type="number" id="riskStaleDays" min="1" step="1" value="30">
+      </label>
+      <button id="btnRisksRefresh" class="small">Обновить</button>
+      <button id="btnRisksCsv" class="small" style="margin-left:8px">CSV ⬳</button>
+    </div>
+
+    <div id="riskChips" style="margin:8px 0;"></div>
+    <div id="riskTableWrap"></div>
+  </div>
+</section>
+
+<!-- ============ ИИ-АНАЛИЗ ============ -->
+<section id="aiView" style="display:none;">
+  <div class="card">
+    <h2>🤖 ИИ-анализ</h2>
+    <p class="hint">Три «субличности» — у каждой свой системный промт (открой «промт ▸», правь как хочешь, сохраняется автоматически). Данные готовятся локально и отправляются напрямую в Anthropic API.</p>
+    <div style="margin:8px 0;">
+      <label style="font-size:13px;">API-ключ:
+        <input type="password" id="aiKey" placeholder="sk-ant-..." style="width:260px;padding:4px 8px;">
+      </label>
+      <button id="aiKeyToggle" class="small" title="показать/скрыть">👁</button>
+      <label style="font-size:13px;margin-left:12px;">Модель:
+        <select id="aiModel" style="padding:4px;">
+          <option value="claude-sonnet-4-6">Sonnet 4.6 (баланс)</option>
+          <option value="claude-haiku-4-5-20251001">Haiku 4.5 (быстро/дёшево)</option>
+          <option value="claude-opus-4-8">Opus 4.8 (максимум)</option>
+        </select>
+      </label>
+    </div>
+    <p class="hint">Ключ хранится только в этом браузере (localStorage) и уходит только на api.anthropic.com. Получить: console.anthropic.com → API Keys.</p>
+  </div>
+
+  <div class="card">
+    <!-- Аудитор -->
+    <div class="ai-persona" id="personaAudit">
+      <h3>💰 Аудитор выгрузки</h3>
+      <p class="hint">Полный разбор последнего импорта: состояние портфеля, договоры под контроль, что проверить в 1С. Получает всю таблицу + сводку рисков.</p>
+      <span class="ai-prompt-toggle" data-p="audit">промт ▸</span>
+      <div class="ai-prompt-wrap" data-pw="audit">
+        <textarea data-pt="audit"></textarea>
+        <button class="small" data-preset="audit">↺ По умолчанию</button>
+      </div>
+      <div class="ai-controls">
+        <button class="ai-run" data-run="audit">▶ Запустить</button>
+      </div>
+      <div class="ai-result" data-res="audit"></div>
+      <div class="ai-meta" data-meta="audit"></div>
+    </div>
+
+    <!-- Аналитик динамики -->
+    <div class="ai-persona" id="personaDyn">
+      <h3>📈 Аналитик динамики</h3>
+      <p class="hint">Тренды за период: движение портфеля, оплат, коэффициентов; договоры-локомотивы и тормоза. Получает агрегаты по каждой выгрузке периода + топ изменений.</p>
+      <span class="ai-prompt-toggle" data-p="dyn">промт ▸</span>
+      <div class="ai-prompt-wrap" data-pw="dyn">
+        <textarea data-pt="dyn"></textarea>
+        <button class="small" data-preset="dyn">↺ По умолчанию</button>
+      </div>
+      <div class="ai-controls">
+        <div class="ai-period" id="aiPeriod">
+          <button data-days="31" class="active">Месяц</button>
+          <button data-days="183">Полгода</button>
+          <button data-days="366">Год</button>
+        </div>
+        <button class="ai-run" data-run="dyn">▶ Запустить</button>
+      </div>
+      <div class="ai-result" data-res="dyn"></div>
+      <div class="ai-meta" data-meta="dyn"></div>
+    </div>
+
+    <!-- Ревизор ядра -->
+    <div class="ai-persona" id="personaCore">
+      <h3>🔬 Ревизор ядра</h3>
+      <p class="hint">Самоанализ приложения: получает формулы расчётов в том виде, как они написаны в коде, и результаты автоматических проверок целостности данных. Ищет ошибки в методике.</p>
+      <span class="ai-prompt-toggle" data-p="core">промт ▸</span>
+      <div class="ai-prompt-wrap" data-pw="core">
+        <textarea data-pt="core"></textarea>
+        <button class="small" data-preset="core">↺ По умолчанию</button>
+      </div>
+      <div class="ai-controls">
+        <button class="ai-run" data-run="core">▶ Запустить</button>
+      </div>
+      <div class="ai-result" data-res="core"></div>
+      <div class="ai-meta" data-meta="core"></div>
+    </div>
+  </div>
+</section>
+
+ <!-- ============ СВЕРКА С ПФ ============ -->
+<section id="pfView" style="display:none;">
+  <!-- Загрузка -->
+  <div class="card">
+    <h2>Сверка с Планфиксом</h2>
+    <p class="hint">Загрузите CSV из 1С и CSV-отчёт из Планфикса за один и тот же период.</p>
+    <label>Дата выгрузки: <input type="date" id="pfDate"></label>
+    <input type="file" id="file1cPF"  accept=".csv">
+    <input type="file" id="filepf"    accept=".csv">
+    <button id="btnPfLoad" disabled>Сверить</button>
+  </div>
+
+  <!-- Легенда + пороговый слайдер -->
+  <div class="card">
+    <h2>Легенда и фильтр</h2>
+    <ul class="legend">
+      <li><span class="box" style="background:#f0f4ff"></span> Расхождение</li>
+      <li><span class="box" style="background:#ffeecc"></span> Только в 1С</li>
+      <li><span class="box" style="background:#ddd"></span> Устранено</li>
+      <li><span class="box" style="background:#ccffcc"></span> Только в ПФ</li>
+      <li><span class="box" style="background:#e0ffe0"></span> Совпадение</li>
+    </ul>
+    <div class="tbl-head" style="margin-top:6px">
+      Порог расхождений (руб):
+      <input type="range" id="pfRange" min="0" max="100000" step="100">
+      <input type="number" id="pfRangeNum" step="100" style="width:120px">
+    </div>
+    <label style="display:flex;align-items:center;gap:4px;margin-top:8px;font-size:13px">
+  <input type="checkbox" id="chkPfOnly1C" checked>
+  <span class="box" style="background:#ffeecc"></span>
+  Только в 1С
+</label>
+<label style="display:flex;align-items:center;gap:4px;margin-top:4px;font-size:13px">
+  <input type="checkbox" id="chkPfOnlyPf" checked>
+  <span class="box" style="background:#ccffcc"></span>
+  Только в ПФ
+</label>
+    <label style="display:flex;align-items:center;gap:4px;margin-top:8px;font-size:13px">
+  <input type="checkbox" id="chkPfMatch" checked>
+  <span class="box" style="background:#e0ffe0"></span>
+  Показать совпадения
+</label>
+<label style="display:flex;align-items:center;gap:4px;margin-top:4px;font-size:13px">
+  <input type="checkbox" id="chkPfCommented">
+  <span class="box" style="background:#fff3cd;border-color:#ffc107"></span>
+  Только с комментариями
+</label>
+  </div>
+
+  <!-- Результаты -->
+  <div id="pfResultCard" class="card hidden">
+    <h2 id="pfResultTitle"></h2>
+    <div id="pfTblWrap"></div>
+    <button id="btnPfCsv" class="small" style="margin-top:8px">CSV ⬳</button>
+  </div>
+
+  <!-- История сверок -->
+<div class="card">
+  <h2>История сверок с ПФ</h2>
+  <div style="margin-bottom:10px">
+    <button id="btnPfExport" class="small">Экспорт JSON</button>
+    <input type="file" id="pfJsonInput" accept=".json" style="display:none">
+    <button id="btnPfImport" class="small">Импорт JSON</button>
+  </div>
+  <div id="pfArch"></div>
+</div>
+</section>
+
+<!-- ============ КОЭФФИЦИЕНТЫ ============ -->
+<!-- ============ КОЭФФИЦИЕНТЫ ============ -->
+<section id="coefView" style="display:none;">
+  <!-- Информация о данных -->
+  <div class="card">
+    <h2>Источник данных</h2>
+    <p class="hint">Данные берутся из последнего импорта на вкладке "Главная". Для расчета коэффициентов необходимы поля: Дизайнер и Безнал</p>
+    <div id="coefDataInfo" style="padding:10px;background:#e3f2fd;border-radius:4px;margin-top:10px;font-size:13px;"></div>
+  </div>
+
+  <!-- Архив импортов коэффициентов -->
+  <div class="card">
+    <h2>Архив импортов</h2>
+    <p class="hint">История всех загрузок. Нажмите на импорт для просмотра деталей.</p>
+    <div id="coefImportsArchive"></div>
+  </div>
+
+  <!-- Фильтры и легенда -->
+  <div class="card">
+    <h2>Фильтры и легенда</h2>
+    <div class="filter-controls">
+      <label style="font-size:13px;">
+        Порог изменений (%):
+        <input type="number" id="coefThreshold" min="0" max="100" step="1" value="5" style="width:60px;margin-left:5px;">
+      </label>
+      <label style="font-size:13px;">
+        <input type="checkbox" id="coefOnlyChanged">
+        Только изменившиеся
+      </label>
+      <label style="font-size:13px;">
+        <input type="checkbox" id="coefOnlySignificant">
+        Значительные (>10%)
+      </label>
+    </div>
+    
+    <ul class="legend">
+      <li><span class="box" style="background:#c8e6c9"></span> Рост коэффициента</li>
+      <li><span class="box" style="background:#ffcdd2"></span> Снижение коэффициента</li>
+      <li><span class="box" style="background:#e0f7fa"></span> Новый договор</li>
+      <li><span class="box" style="background:#ffebee"></span> Удален/завершен</li>
+    </ul>
+  </div>
+
+  <!-- Статистика -->
+  <div class="card">
+    <h2>Статистика коэффициентов</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
+      <div style="background:#f8f9fa;padding:10px;border-radius:4px;border-left:3px solid #4caf50;">
+        <div style="font-size:11px;color:#666;">Ср. коэф. предв.</div>
+        <div id="coefAvgPred" style="font-size:18px;font-weight:600;">—</div>
+      </div>
+      <div style="background:#f8f9fa;padding:10px;border-radius:4px;border-left:3px solid #2196f3;">
+        <div style="font-size:11px;color:#666;">Ср. коэф. план</div>
+        <div id="coefAvgPlan" style="font-size:18px;font-weight:600;">—</div>
+      </div>
+      <div style="background:#f8f9fa;padding:10px;border-radius:4px;border-left:3px solid #ff9800;">
+        <div style="font-size:11px;color:#666;">Ср. маржа</div>
+        <div id="coefAvgMargin" style="font-size:18px;font-weight:600;">—</div>
+      </div>
+      <div style="background:#f8f9fa;padding:10px;border-radius:4px;border-left:3px solid #9c27b0;">
+        <div style="font-size:11px;color:#666;">Изменившихся</div>
+        <div id="coefChangedCount" style="font-size:18px;font-weight:600;">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Активные договоры -->
+  <div class="card">
+    <h2>Активные договоры <span id="coefDate"></span></h2>
+    <div id="coefTable"></div>
+
+    
+    <!-- Удаленные/завершенные договоры - сворачиваемая секция -->
+    <div class="collapsible-section">
+      <div class="collapsible-header" onclick="toggleDeletedCoef()">
+        <h3>Удаленные/завершенные договоры (<span id="coefDeletedCount">0</span>)</h3>
+        <span class="toggle-icon" id="coefToggleIcon">▼</span>
+      </div>
+      <div class="collapsible-content" id="coefDeletedContent">
+
+        <!-- Мини-карточки для удаленных: Средние по предв/план/марже -->
+<div id="coefDeletedStats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0;">
+  <div class="card" style="padding:12px">
+    <div style="font-size:12px;color:#666">Ср. коэф. предв.</div>
+    <div id="coefDelAvgPred" style="font-size:18px;font-weight:700">—</div>
+  </div>
+  <div class="card" style="padding:12px">
+    <div style="font-size:12px;color:#666">Ср. коэф. план</div>
+    <div id="coefDelAvgPlan" style="font-size:18px;font-weight:700">—</div>
+  </div>
+  <div class="card" style="padding:12px">
+    <div style="font-size:12px;color:#666">Ср. маржа</div>
+    <div id="coefDelAvgMargin" style="font-size:18px;font-weight:700">—</div>
+  </div>
+</div>
+
+        <div id="coefDeletedTable"></div>
+      </div>
+    </div>
+    
+    <button id="btnCoefCsv" class="small" style="margin-top:8px">Экспорт CSV</button>
+  </div>
+
+  <!-- График -->
+  <div class="card">
+    <h2>Динамика коэффициентов</h2>
+    <p class="hint">Средние значения коэффициентов и маржи по всем импортам</p>
+    <canvas id="coefChart" width="1000" height="360"></canvas>
+  </div>
+</section>
+
+<!-- управление -->
+<div class="card">
+  <h2>Управление данными</h2>
+  <p class="hint">
+  <strong>Полный бэкап</strong> - сохранит ВСЕ данные (импорты 1С, справочник договоров, сверки ПФ, настройки)<br>
+  <strong>Экспорт (только 1С)</strong> - сохранит только историю импортов из 1С<br>
+  <strong>Импорт JSON</strong> - восстановит данные из любого бэкапа<br>
+  <strong>Очистить данные</strong> - удалит всё из браузера
+</p>
+  <button id="btnExport" class="small">Экспорт JSON</button>
+  <input type="file" id="jsonInput" accept=".json" style="display:none">
+  <button id="btnImport" class="small">Импорт JSON</button>
+  <button id="btnClear"  class="small danger">Очистить данные</button>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════ CONSTANTS ═════════════════════════════════════════════════════ */
+/* ---------- глобальные ---------- */
+const LS_KEY='importsV11';
+
+/* ---------- СПРАВОЧНИК ДОГОВОРОВ ---------- */
+const CONTRACTS_DIR_KEY = 'contractsDirectoryV1';
+let contractsDirectory = JSON.parse(localStorage.getItem(CONTRACTS_DIR_KEY) || '{}');
+let showCompactView = JSON.parse(localStorage.getItem('compactViewMode') || 'false');
+let importMismatches = []; // Для отчета о несоответствиях
+
+// Сохранение справочника
+const saveContractsDirectory = () => {
+  try {
+    localStorage.setItem(CONTRACTS_DIR_KEY, JSON.stringify(contractsDirectory));
+  } catch(e) {
+    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+      showToast('⚠️ Хранилище заполнено. Справочник не сохранён.', 'error');
+    }
+  }
+};
+
+// Получение данных о договоре
+function getContractInfo(num) {
+  const info = contractsDirectory[num];
+  if (!info || (!info.name && !info.comment)) {
+    return { name: '...', comment: '', exists: false };
+  }
+  return { ...info, exists: true };
+}
+
+// Форматирование для компактного отображения
+function formatCompactContract(num, maxNameLen = 20, maxCommentLen = 10) {
+  const info = getContractInfo(num);
+  if (!info.exists) return num + ' • ...';
+  
+  let result = num;
+  if (info.name) {
+    const name = info.name.length > maxNameLen 
+      ? info.name.substring(0, maxNameLen) + '...' 
+      : info.name;
+    result += ' • ' + name;
+  }
+  if (info.comment && !showCompactView) {
+    const comment = info.comment.length > maxCommentLen 
+      ? info.comment.substring(0, maxCommentLen) + '...' 
+      : info.comment;
+    result += ' • ' + comment;
+  }
+  return result;
+}
+
+// Импорт справочника из CSV
+function importContractsDirectory(text) {
+  const lines = text.trim().split(/\r?\n/);
+  lines.shift(); // убираем заголовок
+  
+  let imported = 0;
+  lines.forEach(line => {
+    const parts = line.split(';');
+    if (parts.length >= 2) {
+      const id = parts[0].trim();
+      const name = parts[1].trim();
+      const comment = parts[2] ? parts[2].trim() : '';
+      
+      if (id) {
+        contractsDirectory[id] = { name, comment };
+        imported++;
+      }
+    }
+  });
+  
+  saveContractsDirectory();
+  return imported;
+}
+
+
+/* ════════════════════════════════════════════════════════ STATE ══════════════════════════════════════════════════════════ */
+/* === PF reconciliation === */
+const LS_PF  = 'pfRecsV1';
+const LS_THR = 'pfThreshold';
+// индекс выбранной сверки в pfStore 
+let selectedPfIndex = null;
+let histActiveIndex = 0;
+let   pfStore = JSON.parse(localStorage.getItem(LS_PF) || '[]');
+const savePf = () => {
+  try {
+    localStorage.setItem(LS_PF, JSON.stringify(pfStore));
+  } catch(e) {
+    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+      showToast('⚠️ Хранилище заполнено. Удалите старые сверки ПФ.', 'error');
+    }
+  }
+};
+let store = JSON.parse(localStorage.getItem(LS_KEY)||'[]');
+
+
+/* ════════════════════════════════════════════════════════ UTILS ══════════════════════════════════════════════════════════ */
+/* ---------- utils ---------- */
+
+// Хелпер для пустых состояний таблиц
+const emptyState = (msg) => `<p class="empty-state">${msg}</p>`;
+
+function showToast(msg, type = 'success') {
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+    document.body.appendChild(container);
+  }
+  const colors = { success: '#2e7d32', error: '#c62828', warning: '#e65100' };
+  const toast = document.createElement('div');
+  toast.textContent = msg;
+  toast.style.cssText = `background:${colors[type]||colors.success};color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.25);opacity:1;transition:opacity .4s;max-width:340px;`;
+  container.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 3000);
+}
+const sep = v =>
+  (v == null || isNaN(v))
+    ? ''
+    : Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 2 })
+            .replace(/\u00A0/g, ' ');
+const toNum=s=>parseFloat(String(s).replace(/ /g,'').replace(',','.'))||0;
+const fmtDate=iso=>iso.split('-').reverse().join('.');
+const save = () => {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(store));
+  } catch(e) {
+    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+      showToast('⚠️ Хранилище заполнено. Удалите старые импорты.', 'error');
+    }
+  }
+};
+
+
+/* ════════════════════════════════════════════════════════ PARSERS ════════════════════════════════════════════════════════ */
+/* ---------- diff & impact ---------- */
+const SUSPECT=['СуммаЗаказа','ССПред','ССПлан'];
+function buildDiff(prev,curr,impDate,coef){
+  const workingCurr=[...curr]; // работаем только с копией — оригинал не трогаем
+  const mp=new Map(prev.map(r=>[r.Номер,r]));
+  let newCount=0,delCount=0,modCount=0;
+  const diffCounts={СуммаЗаказа:0,СуммаОплат:0,ОстатокОплат:0,ССПред:0,ССПлан:0,ССФакт:0,Дизайнер:0,Безнал:0};
+  const changes=[],allChanges=[];
+  prev.forEach(r=>{if(!workingCurr.find(c=>c.Номер===r.Номер)){workingCurr.push({...r,__status:'deleted'});delCount++;}});
+  workingCurr.forEach(r=>{
+    const old=mp.get(r.Номер);
+    if(!old){r.__status='new';newCount++;return;}
+    const diff={};
+    Object.keys(diffCounts).forEach(k=>{
+      if(old[k]!==r[k]){
+        const delta=r[k]-old[k];
+        diff[k]=true;diffCounts[k]++;
+        allChanges.push({field:k,num:r.Номер,was:old[k],became:r[k],delta});
+        if(SUSPECT.includes(k))changes.push({date:impDate,num:r.Номер,field:k,was:old[k],became:r[k],comment:''});
+      }
+    });
+    if(Object.keys(diff).length){r.__diff=diff;modCount++;}
+  });
+  const tot=a=>{let bal=0,dir=0;a.filter(x=>x.__status!=='deleted').forEach(x=>{bal+=toNum(x.ОстатокОплат);dir+=(x.ССПлан||x.ССПред)-x.ССФакт;});return{bal,dir};};
+  const o=tot(prev),n=tot(workingCurr);
+  const salOld=o.bal-o.dir-o.dir*coef,salNew=n.bal-n.dir-n.dir*coef;
+  return{newCount,delCount,modCount,diffCounts,changes,allChanges,saldoDelta:salNew-salOld,date:impDate};
+}
+/* ---------- PF diff ---------- */
+function buildPfDiff(rows1C, rowsPf){ // порог применяется при отрисовке (renderPfTable), а не здесь
+  const m1 = new Map(rows1C.map(r=>[r.Номер,r]));
+  const m2 = new Map(rowsPf.map(r=>[r.Номер,r]));
+  const F = [
+    ['СуммаЗаказа','СтоимостьЗаказа'],
+    ['СуммаОплат' , 'СуммаОплат'   ],
+    ['ОстатокОплат','ОстатокОплат' ]
+  ];
+  const M = [];                         // итоговый массив расхождений
+  new Set([...m1.keys(), ...m2.keys()]).forEach(num => {
+  const r1 = m1.get(num), r2 = m2.get(num);
+  // только в 1С
+  if (!r2) {
+    M.push({ num, cls: 'pf-only1c', st: 'open', msg: 'Только в 1С' });
+    return;
+  }
+  // только в ПФ
+  if (!r1) {
+    M.push({ num, cls: 'pf-onlyPf', st: 'open', msg: 'Только в ПФ' });
+    return;
+  }
+  // сравнение по полям
+  F.forEach(([f1, f2]) => {
+    const v1 = r1[f1] || 0;
+    const v2 = r2[f2] || 0;
+    const d  = v1 - v2;
+    if (d === 0) {
+  M.push({ num, field: f1, v1, v2, delta: d,
+           cls: 'pf-match-row',  st: 'open' });   // Δ = 0 ⇒ совпадение
+} else {
+  M.push({ num, field: f1, v1, v2, delta: d,
+           cls: 'pf-diff-row',   st: 'open' });   // Δ ≠ 0 ⇒ расхождение
+}
+  });
+});
+  return M;
+}
+/* ════════════════════════════════════════════════════════ RENDER_* ═══════════════════════════════════════════════════════ */
+/* ---------- render PF table ---------- */
+function renderPfTable(arr, thr){
+  const wrap = document.getElementById('pfTblWrap');
+  wrap.innerHTML = '';
+  
+  // Фильтрация по порогу и галочкам
+  const showMatch = document.getElementById('chkPfMatch').checked;
+  const showOnly1C = document.getElementById('chkPfOnly1C').checked;
+  const showOnlyPf = document.getElementById('chkPfOnlyPf').checked;
+  const showOnlyCommented = document.getElementById('chkPfCommented') ? 
+    document.getElementById('chkPfCommented').checked : false;
+
+  const data = arr.filter(r => {
+    // Фильтр по комментариям
+    if (showOnlyCommented && !r.comment) return false;
+    
+    if (r.cls === 'pf-diff-row') return Math.abs(r.delta) >= thr;
+    if (r.cls === 'pf-match-row') return showMatch;
+    if (r.cls === 'pf-only1c') return showOnly1C;
+    if (r.cls === 'pf-onlyPf') return showOnlyPf;
+    return true;
+  });
+
+  const tbl = document.createElement('table');
+  const hdr = ['№','Поле','1С','ПФ','Δ','Ст','Комментарий'];
+  const trh = document.createElement('tr');
+  hdr.forEach(h=>trh.appendChild(Object.assign(document.createElement('th'),{textContent:h})));
+  tbl.appendChild(trh);
+
+  data.forEach((r, idx)=>{
+    const tr = document.createElement('tr');
+    tr.classList.add(r.cls);
+    
+    // Если статус "resolved", добавляем класс для перечеркивания
+    if(r.st === 'resolved') {
+      tr.classList.add('pf-resolved');
+    }
+    
+    // Столбцы с данными
+    ['num','field','v1','v2'].forEach(k => {
+      const td = document.createElement('td');
+      if (k === 'field') {
+        td.textContent = r.field || r.msg || '';
+      } else if (k === 'v1' || k === 'v2') {
+        td.textContent = sep(r[k]);
+      } else {
+        td.textContent = r.num || '';
+      }
+      tr.appendChild(td);
+    });
+    
+    // Столбец Δ
+    const tdΔ = document.createElement('td');
+    tdΔ.textContent = (r.delta>0?'+':'')+sep(r.delta||0);
+    tr.appendChild(tdΔ);
+
+    // Столбец статуса с кнопкой
+    const tdSt = document.createElement('td');
+    const btn = Object.assign(document.createElement('button'),{
+      className:'small',
+      textContent:r.st==='resolved'?'↺':'✓',
+      style: r.st==='resolved' ? 'background:#4caf50;color:#fff' : ''
+    });
+    btn.onclick = ()=>{ 
+      r.st = r.st==='open' ? 'resolved' : 'open';
+      if(r.st==='resolved'){ 
+        tr.classList.add('pf-resolved');
+        btn.textContent = '↺';
+        btn.style.background = '#4caf50';
+        btn.style.color = '#fff';
+      } else { 
+        tr.classList.remove('pf-resolved');
+        btn.textContent = '✓';
+        btn.style.background = '';
+        btn.style.color = '';
+      }
+      savePf();
+    };
+    tdSt.appendChild(btn);
+    tr.appendChild(tdSt);
+
+    // Столбец комментарий
+    const tdCom = document.createElement('td');
+    tdCom.textContent = r.comment || '-';
+    tdCom.style.cursor = 'pointer';
+    tdCom.addEventListener('dblclick', ()=>{
+      const inp = Object.assign(document.createElement('input'),{
+        value: r.comment || '',
+        className: 'cell-edit',
+        style: 'width:100%'
+      });
+      tdCom.textContent = '';
+      tdCom.appendChild(inp);
+      inp.focus();
+      
+      inp.addEventListener('blur', ()=>{
+        r.comment = inp.value.trim();
+        tdCom.textContent = r.comment || '-';
+        savePf();
+      });
+      
+      inp.addEventListener('keypress', (e)=>{
+        if(e.key === 'Enter') {
+          inp.blur();
+        }
+      });
+    });
+    tr.appendChild(tdCom);
+
+    tbl.appendChild(tr);
+  });
+  wrap.appendChild(tbl);
+}
+
+/* ---------- таблица договоров ---------- */
+function renderTable(place, data, editable) {
+  place.innerHTML = '';
+  
+  // Определяем колонки в зависимости от режима отображения
+  const baseCols = ['Номер'];
+  const dataCols = showCompactView 
+    ? ['СуммаЗаказа','СуммаОплат','ОстатокОплат','ССПред','ССПлан','ССФакт']
+    : ['Наименование','Прим.','СуммаЗаказа','СуммаОплат','ОстатокОплат','ССПред','ССПлан','ССФакт'];
+  const cols = [...baseCols, ...dataCols];
+  
+  const tbl = document.createElement('table');
+  
+  // Переключатель компактного вида (только для редактируемых таблиц)
+  if (editable) {
+    const toggleLabel = document.createElement('label');
+    toggleLabel.className = 'compact-toggle';
+    toggleLabel.innerHTML = `
+      <input type="checkbox" id="compactToggle_${Date.now()}" ${showCompactView ? 'checked' : ''}>
+      Компактный вид
+    `;
+    toggleLabel.querySelector('input').addEventListener('change', (e) => {
+      showCompactView = e.target.checked;
+      localStorage.setItem('compactViewMode', JSON.stringify(showCompactView));
+      renderTable(place, data, editable);
+    });
+    place.appendChild(toggleLabel);
+  }
+  
+  // Шапка таблицы
+  const trh = document.createElement('tr');
+  [...cols, '✖'].forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    if (h === 'Наименование') th.style.maxWidth = '250px';
+    if (h === 'Прим.') th.style.width = '150px';
+    trh.appendChild(th);
+  });
+  tbl.appendChild(trh);
+
+  // Итоги
+  const totals = {};
+  ['СуммаЗаказа','СуммаОплат','ОстатокОплат','ССПред','ССПлан','ССФакт'].forEach(k => {
+    totals[k] = data.filter(r => r.__status !== 'deleted').reduce((s, r) => s + toNum(r[k]), 0);
+  });
+  
+  const trSum = document.createElement('tr');
+  trSum.className = 'summary-row';
+  
+  cols.forEach((k, idx) => {
+    const td = document.createElement('td');
+    if (idx === 0) {
+      td.textContent = 'Σ';
+    } else if (totals[k] !== undefined) {
+      td.textContent = sep(totals[k]);
+    }
+    trSum.appendChild(td);
+  });
+  trSum.appendChild(document.createElement('td'));
+  tbl.appendChild(trSum);
+
+  // Строки данных
+  data.forEach(r => {
+    const tr = document.createElement('tr');
+    if (r.__status === 'new') tr.classList.add('new-row');
+    if (r.__status === 'deleted') tr.classList.add('deleted-row');
+    
+    cols.forEach(k => {
+      const td = document.createElement('td');
+      
+      if (k === 'Номер') {
+        const info = getContractInfo(r[k]);
+        if (showCompactView && info.exists) {
+          td.textContent = formatCompactContract(r[k], 30, 15);
+          td.className = 'contract-full-info';
+          td.title = `${info.name}\n${info.comment || 'Без примечания'}`;
+        } else {
+          td.textContent = r[k];
+          if (info.exists) {
+            td.className = 'contract-full-info';
+            td.title = `${info.name}\n${info.comment || 'Без примечания'}`;
+          }
+        }
+      } else if (k === 'Наименование') {
+        const info = getContractInfo(r.Номер);
+        td.textContent = info.name || '...';
+        td.className = 'contract-name-col';
+        if (info.name) td.title = info.name;
+      } else if (k === 'Прим.') {
+        const info = getContractInfo(r.Номер);
+        td.textContent = info.comment || '';
+        td.className = 'contract-comment-col';
+        if (info.comment) td.title = info.comment;
+      } else {
+        td.textContent = sep(r[k]);
+        if (r[k] < 0) td.classList.add('neg');
+        if (k === 'ССФакт' && r[k] !== 0 && (r.ССПлан === 0 || r.ССПред === 0)) {
+          td.classList.add('nocost');
+        }
+      }
+      
+      // Редактирование для числовых полей
+      if (editable && k !== 'Номер' && k !== 'Наименование' && k !== 'Прим.') {
+        td.addEventListener('dblclick', () => {
+          const inp = Object.assign(document.createElement('input'), {
+            type: 'text',
+            value: td.textContent,
+            className: 'cell-edit'
+          });
+          td.textContent = '';
+          td.appendChild(inp);
+          inp.focus();
+          inp.addEventListener('blur', () => {
+            const v = toNum(inp.value);
+            if (v !== r[k]) {
+              r[k] = v;
+              td.classList.add('modified-cell');
+              save();
+            }
+            td.textContent = sep(r[k]);
+            td.classList.toggle('neg', r[k] < 0);
+            if (k === 'ССФакт') {
+              td.classList.toggle('nocost', r[k] !== 0 && (r.ССПлан === 0 || r.ССПред === 0));
+            }
+          });
+        });
+      }
+      
+      if (r.__diff && r.__diff[k]) td.classList.add('modified-cell');
+      tr.appendChild(td);
+    });
+    
+    // Кнопка удаления
+    const tdDel = document.createElement('td');
+    if (editable) {
+      const btn = Object.assign(document.createElement('button'), {
+        textContent: '✖',
+        className: 'small danger'
+      });
+      btn.onclick = () => {
+        if (confirm('Удалить строку?')) {
+          r.__status = 'deleted';
+          save();
+          renderTable(place, data, editable);
+        }
+      };
+      tdDel.appendChild(btn);
+    }
+    tr.appendChild(tdDel);
+    tbl.appendChild(tr);
+  });
+  
+  place.appendChild(tbl);
+}
+
+
+/* ---------- Подозрительные изменения ---------- */
+function buildChangesBlock(meta){
+  const wrap=document.createElement('div');wrap.className='tbl-wrap hidden';
+  const hdr=document.createElement('div');hdr.className='tbl-head';hdr.append('Подозрительные изменения: ');
+  const inp=Object.assign(document.createElement('input'),{placeholder:'Поиск №...'});
+  const btn=Object.assign(document.createElement('button'),{textContent:'CSV'});
+  hdr.append(inp,btn);wrap.appendChild(hdr);
+
+  const cont=document.createElement('div');cont.className='tbl-body';wrap.appendChild(cont);
+  const tbl=document.createElement('table');
+  const trh=document.createElement('tr');['Дата','№ договора','Поле','Было','Стало','Комментарий'].forEach(h=>trh.appendChild(Object.assign(document.createElement('th'),{textContent:h})));tbl.appendChild(trh);
+
+  meta.changes.forEach(c=>{
+    const tr=document.createElement('tr');
+    ['date','num','field'].forEach(k=>tr.appendChild(Object.assign(document.createElement('td'),{textContent:c[k]})));
+    tr.appendChild(Object.assign(document.createElement('td'),{textContent:sep(c.was)}));
+    tr.appendChild(Object.assign(document.createElement('td'),{textContent:sep(c.became)}));
+    const tdCom=document.createElement('td');tdCom.textContent=c.comment||'-';
+    tdCom.addEventListener('dblclick',()=>{const i=Object.assign(document.createElement('input'),{type:'text',value:c.comment,className:'cell-edit'});tdCom.textContent='';tdCom.appendChild(i);i.focus();
+      i.addEventListener('blur',()=>{c.comment=i.value.trim();tdCom.textContent=c.comment||'-';save();});});
+    tr.appendChild(tdCom);tbl.appendChild(tr);
+  });cont.appendChild(tbl);
+  inp.addEventListener('input',()=>{const q=inp.value.trim();Array.from(tbl.rows).slice(1).forEach(r=>r.style.display=q&&!r.cells[1].textContent.includes(q)?'none':'');});
+  btn.addEventListener('click',()=>{const lines=['Дата;Номер;Поле;Было;Стало;Комментарий'];meta.changes.forEach(c=>lines.push([c.date,c.num,c.field,c.was,c.became,c.comment].join(';')));
+    const csv='\uFEFF'+lines.join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download=`changes_${meta.date}.csv`;a.click();URL.revokeObjectURL(a.href);});
+  return wrap;
+}
+
+/* ---------- Значительные изменения ---------- */
+function buildImpactBlock(meta){
+  const wrap=document.createElement('div');wrap.className='tbl-wrap hidden';
+  const hdr=document.createElement('div');hdr.className='tbl-head';hdr.textContent='Значительные изменения: ';
+  const max=Math.max(...meta.allChanges.map(o=>Math.abs(o.delta)))||0;
+  const slider=Object.assign(document.createElement('input'),{type:'range',min:0,max:max,step:1000,value:Math.round(max*0.1)});
+  const numInp=Object.assign(document.createElement('input'),{type:'number',step:1000,value:slider.value});
+  hdr.append(slider,numInp,document.createTextNode(' руб.'));wrap.appendChild(hdr);
+
+  const cont=document.createElement('div');cont.className='tbl-body';wrap.appendChild(cont);
+  const tbl=document.createElement('table');
+  const trh=document.createElement('tr');['Поле','№ договора','Было','Стало','Δ'].forEach(h=>trh.appendChild(Object.assign(document.createElement('th'),{textContent:h})));tbl.appendChild(trh);
+  cont.appendChild(tbl);
+
+  const draw=()=>{
+    const thr=Math.abs(numInp.value||0);
+    tbl.querySelectorAll('tr:not(:first-child)').forEach(r=>r.remove());
+    meta.allChanges.filter(r=>Math.abs(r.delta)>=thr).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta)).forEach(r=>{
+      const tr=document.createElement('tr');
+      tr.appendChild(Object.assign(document.createElement('td'),{textContent:r.field}));
+      tr.appendChild(Object.assign(document.createElement('td'),{textContent:r.num}));
+      tr.appendChild(Object.assign(document.createElement('td'),{textContent:sep(r.was)}));
+      tr.appendChild(Object.assign(document.createElement('td'),{textContent:sep(r.became)}));
+      tr.appendChild(Object.assign(document.createElement('td'),{textContent:(r.delta>0?'+':'')+sep(r.delta),style:'font-weight:700'}));
+      tbl.appendChild(tr);
+    });
+    let s=tbl.querySelector('.saldo-row');if(s)s.remove();
+    s=document.createElement('tr');s.className='saldo-row';
+    s.appendChild(Object.assign(document.createElement('td'),{textContent:'Сальдо',colSpan:4,style:'text-align:left;font-weight:700'}));
+    s.appendChild(Object.assign(document.createElement('td'),{textContent:(meta.saldoDelta>0?'+':'')+sep(meta.saldoDelta),style:'font-weight:700'}));
+    tbl.appendChild(s);
+  };
+  slider.addEventListener('input',()=>{numInp.value=slider.value;draw();});
+  numInp.addEventListener('input',()=>{slider.value=numInp.value;draw();});
+  draw();
+  return wrap;
+}
+
+/* ---------- архив ---------- */
+function renderArchive(){
+  const arch=document.getElementById('archList');arch.innerHTML='';
+  store.forEach((imp,idx)=>{
+    const meta=imp.meta;
+    const head=document.createElement('div');head.className='imp-head';head.style.display='flex';head.style.alignItems='center';head.style.gap='8px';
+
+    /* alternating background */
+    if(idx%2===1)head.style.background='#f5f5f5';
+
+    const title=document.createElement('span');title.style.flexGrow='1';title.style.cursor='pointer';
+    title.textContent=`Импорт от ${fmtDate(imp.date)} (${imp.data.length} строк, +${meta.newCount} new, −${meta.delCount} del, ✎${meta.modCount} edit, kз=${imp.coef})`;
+
+    const dc=meta.diffCounts;
+    const info=`${meta.modCount} договоров изменены | `+Object.entries(dc).filter(([,v])=>v>0).map(([k,v])=>`${k}: ${v}`).join(', ');
+    const span=document.createElement('span');span.textContent=' 📊 '+info;span.style.fontSize='12px';span.style.color='#666';
+    title.appendChild(span);
+
+    const btnDel=Object.assign(document.createElement('button'),{textContent:'✖',className:'small danger'});
+    btnDel.onclick=()=>{if(confirm('Удалить импорт?')){store.splice(idx,1);save();renderArchive();buildHistory();}};
+    head.append(title,btnDel);
+
+    const body=document.createElement('div');body.className='hidden';title.onclick=()=>body.classList.toggle('hidden');
+    renderTable(body,imp.data,true);
+
+    if(meta.changes.length){
+      const linkChg=Object.assign(document.createElement('a'),{href:'#',textContent:'Подозрительные изменения',style:'display:inline-block;margin-right:8px;margin-top:6px;font-size:12px'});
+      const blockChg=buildChangesBlock(meta);
+      linkChg.onclick=e=>{e.preventDefault();blockChg.classList.toggle('hidden');};
+      body.prepend(blockChg);body.prepend(linkChg);
+    }
+
+    if(meta.allChanges.length){
+      const linkImp=Object.assign(document.createElement('a'),{href:'#',textContent:'Значительные изменения',style:'display:inline-block;margin-right:8px;margin-top:6px;font-size:12px'});
+      const blockImp=buildImpactBlock(meta);
+      linkImp.onclick=e=>{e.preventDefault();blockImp.classList.toggle('hidden');};
+      body.prepend(blockImp);body.prepend(linkImp);
+    }
+
+    arch.append(head,body);
+  });
+}
+
+/* ======== СБОР ВСЕХ № договоров ======== */
+function allNums(){
+  const set=new Set();
+  store.forEach(imp=>imp.data.forEach(r=>set.add(r.Номер)));
+  return Array.from(set).sort();
+}
+
+function isActiveContract(num){
+  // идём с конца store к началу и ищем последнюю запись с этим номером
+  for (let i = store.length - 1; i >= 0; i--){
+    const hit = store[i].data.find(r => r.Номер === num);
+    if (hit) return hit.__status !== 'deleted';
+  }
+  // если вообще не нашли — не фильтруем
+  return true;
+}
+
+
+function renderNumList() {
+  const activeOnly = !!document.getElementById('chkActiveOnly')?.checked;
+  const arr = allNums().filter(n => !activeOnly || isActiveContract(n));
+
+  const ul = nums;
+  ul.innerHTML = '';
+
+  arr.forEach((num, idx) => {
+    const li = document.createElement('li');
+    li.textContent = num;
+    li.setAttribute('tabindex', '0');
+    li.dataset.index = idx;
+
+    li.onclick = () => {
+      nums.querySelectorAll('li').forEach(x => x.classList.remove('active'));
+      li.classList.add('active');
+
+      // индекс среди видимых элементов (учитываем фильтр поиска)
+      const visible = Array.from(nums.children).filter(x => x.style.display !== 'none');
+      histActiveIndex = visible.indexOf(li);
+
+      renderContract(num);
+    };
+
+    ul.appendChild(li);
+  });
+}
+
+searchNum.addEventListener('input',()=>{const q=searchNum.value.trim();Array.from(nums.children).forEach(li=>li.style.display=q&&!li.textContent.includes(q)?'none':'');});
+// Обработчик чекбокса "Текущие заказы"
+const chk = document.getElementById('chkActiveOnly');
+if (chk) {
+  chk.addEventListener('change', () => renderNumList());
+  renderNumList();
+}
+
+
+// Поля для вкладки "История" (таблица + чекбоксы)
+const FIELDS = [
+  'СуммаЗаказа',
+  'СуммаОплат',
+  'ОстатокОплат',
+  'Дизайнер',
+  'Безнал',
+  'ССПред',
+  'ССПлан',
+  'ССФакт',
+  'Коэф.предв',
+  'Коэф.план',
+  'Коэф.Итог',
+  'ОстатокСС'
+];
+
+/* ==== Память чекбоксов для вкладки История ==== */
+const HIST_CHECKS_LS = 'histChecksV1';
+
+function loadHistChecks() {
+  try { return JSON.parse(localStorage.getItem(HIST_CHECKS_LS) || '{}'); }
+  catch(_) { return {}; }
+}
+function saveHistChecks(obj) {
+  localStorage.setItem(HIST_CHECKS_LS, JSON.stringify(obj || {}));
+}
+
+function renderContract(num){
+  histTitle.textContent=num;
+  // Добавляем наименование в заголовок
+const contractInfo = getContractInfo(num);
+if (contractInfo.exists && contractInfo.name) {
+  histTitle.textContent = `${num} • ${contractInfo.name}`;
+}
+
+  // собираем версии
+const rows = [];
+store.forEach(imp => {
+  const r = imp.data.find(x => x.Номер === num);
+  if (r) {
+    const coefs = calculateCoefficients([r])[0];
+    rows.push({
+  date: fmtDate(imp.date),
+  ...r,
+  'Коэф.предв':    coefs.coefPred,
+  'Коэф.план':     coefs.coefPlan,
+  'Коэф.Итог': coefs.coefFinal,                     // новый столбец
+  'ОстатокСС':    Number.isFinite(coefs.overrun) ? coefs.overrun : NaN  // новый столбец
+});
+  }
+});
+
+  /* ---- таблица ---- */
+  histTable.innerHTML='';
+  const tbl=document.createElement('table');
+  const trh = document.createElement('tr');
+
+// Дата
+let th = document.createElement('th'); th.textContent = 'Дата'; trh.appendChild(th);
+
+// Узкая колонка индикатора
+th = document.createElement('th'); th.textContent = 'Инд.'; th.className = 'col-ind'; trh.appendChild(th);
+
+// Дальше — колонки из FIELDS (см. шаг 3 — мы их расширим)
+FIELDS.forEach(h => {
+  const th = document.createElement('th');
+  th.textContent = h;
+  if (h === 'Коэф.Итог' || h === 'ОстатокСС') th.classList.add('col-gray');
+  trh.appendChild(th);
+});
+
+// Комментарий
+th = document.createElement('th'); th.textContent = 'Комментарий'; trh.appendChild(th);
+
+tbl.appendChild(trh);
+
+
+  rows.forEach((r,i)=>{
+    const tr=document.createElement('tr');
+    if (r.__status === 'deleted') tr.classList.add('deleted-row');
+    tr.appendChild(Object.assign(document.createElement('td'),{textContent:r.date}));
+    
+    // Добавляем столбец индикатора
+    const tdIndicator = document.createElement('td');
+    tdIndicator.classList.add('col-ind');
+    tdIndicator.style.textAlign = 'center';
+    const divisor = r.ССПлан > 0 ? r.ССПлан : r.ССПред;
+    if(divisor > 0) {
+        const ratio = r.СуммаЗаказа / divisor;
+        if(ratio < 2) {
+            const dot = document.createElement('span');
+            dot.className = 'indicator-dot';
+            tdIndicator.appendChild(dot);
+        }
+    }
+    tr.appendChild(tdIndicator);
+    FIELDS.forEach(f => {
+  const td = document.createElement('td');
+  td.textContent = sep(r[f]);
+
+  // серый фон для вычисляемых колонок (оставляем)
+  if (f === 'Коэф.Итог' || f === 'ОстатокСС') td.classList.add('col-gray');
+
+  // Если это не первая строка — проверяем изменение значения относительно предыдущей версии
+  const changed = (i > 0 && r[f] !== rows[i-1][f]);
+
+  // Специальная логика для колонки "ОстатокСС":
+  // - если значение отрицательное -> класс neg (красный)
+  // - если значение положительное и изменилось -> modified-cell (жёлтый)
+  // - если не изменилось и отрицательное -> всё равно neg
+  if (f === 'ОстатокСС') {
+    const val = toNum(r[f]);
+    if (val < 0) {
+      td.classList.add('neg');
+    } else if (changed && val > 0) {
+      td.classList.add('modified-cell');
+    }
+  } else {
+    // Обычная логика для прочих колонок: жёлтый, если изменилось
+    if (changed) td.classList.add('modified-cell');
+    // и красный, если отрицательное (вне зависимости от changed)
+    if (toNum(r[f]) < 0) td.classList.add('neg');
+  }
+
+  tr.appendChild(td);
+});
+
+    // комментарий
+    const tdCom=document.createElement('td');tdCom.textContent=r.comment||'-';
+    tdCom.addEventListener('dblclick',()=>{const inp=Object.assign(document.createElement('input'),{value:r.comment||'',className:'cell-edit'});tdCom.textContent='';tdCom.appendChild(inp);inp.focus();
+      inp.addEventListener('blur',()=>{
+    // Находим правильный импорт по дате
+    const impIndex = store.findIndex(imp => {
+        const impDate = fmtDate(imp.date);
+        return impDate === r.date && imp.data.some(x => x.Номер === num);
+    });
+    
+    if(impIndex !== -1) {
+        const dataIndex = store[impIndex].data.findIndex(x => x.Номер === num);
+        if(dataIndex !== -1) {
+            store[impIndex].data[dataIndex].comment = inp.value.trim();
+            save();
+        }
+    }
+    r.comment = inp.value.trim();
+    tdCom.textContent = r.comment || '-';
+  });
+});
+    tr.appendChild(tdCom);
+    tbl.appendChild(tr);
+  });
+  histTable.appendChild(tbl);
+
+/* ---- чекбоксы (с запоминанием состояния) ---- */
+fieldToggles.innerHTML = '';
+const saved = loadHistChecks();
+
+// если появились новые поля, которых ещё нет в сохранённом состоянии — включаем их
+FIELDS.forEach(f => { if (typeof saved[f] === 'undefined') saved[f] = true; });
+
+// генерация переключателей
+FIELDS.forEach((f, idx) => {
+  const lbl = document.createElement('label');
+  lbl.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:13px';
+
+  const chk = Object.assign(document.createElement('input'), {
+    type: 'checkbox',
+    checked: !!saved[f]
+  });
+
+  chk.onchange = () => {
+    saved[f] = chk.checked;
+    saveHistChecks(saved);
+    drawHistChart();
+  };
+
+  lbl.append(chk, f);
+  fieldToggles.appendChild(lbl);
+});
+
+
+/* ---- график ---- */
+function drawHistChart() {
+  const c = histChart;
+  const parent = c.parentElement;
+  const cssWidth  = Math.max(320, parent ? parent.clientWidth - 40 : 600);
+  const cssHeight = c.clientHeight || 300;
+  const ctx = fitHiDPICanvas(c, cssWidth, cssHeight);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+  if (!rows.length) return;
+
+  const W = cssWidth;
+  const H = cssHeight;
+
+  // какие поля включены галочками
+  const active = Array.from(fieldToggles.querySelectorAll('input'))
+    .map((chk, i) => (chk.checked ? FIELDS[i] : null))
+    .filter(Boolean);
+  if (!active.length) return;
+
+  const padX = 90, padY = 50, topGap = 30, rightGap = 10;
+  const colors = [
+  '#4caf50', '#ff9800', '#9c27b0', '#2196f3', '#795548', '#009688',
+  '#3f51b5', '#e91e63', '#607d8b', '#8bc34a', '#ff5722'
+];
+
+  // безопасный парсер чисел (undefined/пусто -> NaN)
+  const getVal = (row, field) => {
+    const v = toNum(row[field]);
+    return Number.isFinite(v) ? v : NaN;
+  };
+
+  // общий min/max по всем активным сериям без NaN
+  const flat = active
+    .flatMap(f => rows.map(o => getVal(o, f)))
+    .filter(Number.isFinite);
+  const min = flat.length ? Math.min(...flat) : 0;
+  const max = flat.length ? Math.max(...flat) : 1;
+  const rng = (max - min) || 1;
+  const step = rows.length > 1 ? (W - padX - rightGap) / (rows.length - 1) : 0;
+
+  // оси
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padX, topGap);
+  ctx.lineTo(padX, H - padY);
+  ctx.lineTo(W - rightGap, H - padY);
+  ctx.stroke();
+
+  // нулевая линия
+  if (min < 0 && max > 0) {
+    const y0 = H - padY - ((0 - min) / rng) * (H - padY - topGap);
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = '#f88';
+    ctx.beginPath();
+    ctx.moveTo(padX, y0);
+    ctx.lineTo(W - rightGap, y0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // деления Y
+  ctx.fillStyle = '#666';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i <= 5; i++) {
+    const y = H - padY - i * (H - padY - topGap) / 5;
+    const val = min + i * rng / 5;
+    ctx.beginPath();
+    ctx.moveTo(padX - 4, y);
+    ctx.lineTo(padX, y);
+    ctx.stroke();
+    ctx.fillText(sep(Math.round(val)), padX - 8, y);
+  }
+
+  // деления X
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  rows.forEach((o, i) => {
+    const x = padX + i * step;
+    ctx.beginPath();
+    ctx.moveTo(x, H - padY);
+    ctx.lineTo(x, H - padY + 4);
+    ctx.stroke();
+    ctx.fillText(o.date, x, H - padY + 6);
+  });
+
+  // серии
+  active.forEach((f, idx) => {
+    ctx.strokeStyle = colors[idx % colors.length];
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    // рисуем ломаную с пропусками на NaN
+    let started = false;
+    rows.forEach((o, i) => {
+      const v = getVal(o, f);
+      if (!Number.isFinite(v)) { started = false; return; }
+      const x = padX + i * step;
+      const y = H - padY - ((v - min) / rng) * (H - padY - topGap);
+      if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
+    });
+    ctx.stroke();
+
+    // маркеры + подписи
+    ctx.fillStyle = colors[idx % colors.length];
+    ctx.textBaseline = 'bottom';
+    rows.forEach((o, i) => {
+      const v = getVal(o, f);
+      if (!Number.isFinite(v)) return;
+      const x = padX + i * step;
+      const y = H - padY - ((v - min) / rng) * (H - padY - topGap);
+      const lblY = y - 6 < topGap ? y + 12 : y - 6;
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.fillText(sep(Math.round(v)), x, lblY);
+    });
+  });
+}
+
+  drawHistChart();
+
+  /* ---- CSV ---- */
+btnCsv.onclick = () => {
+  const header = ['Дата','Инд.', ...FIELDS, 'Комментарий'];
+  const lines = [header.join(';')];
+
+  rows.forEach(r => {
+    const divisor = r.ССПлан > 0 ? r.ССПлан : r.ССПред;
+    const hasIndicator = divisor > 0 && (r.СуммаЗаказа / divisor) < 2 ? '●' : '';
+
+    const values = FIELDS.map(f => r[f]);
+    lines.push([r.date, hasIndicator, ...values, (r.comment || '')].join(';'));
+  });
+
+  const csv = '\uFEFF' + lines.join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `history_${num}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+  // сразу нарисовать активный чекбокс-набор
+  drawHistChart();
+}
+
+/* ---------- history / chart ---------- */
+function calcTotals(rows){
+  let bal = 0, ssAbs = 0;
+  rows
+    .filter(r => r.__status !== 'deleted')
+    .forEach(r => {
+      bal += toNum(r.ОстатокОплат);
+      const ssPlan = toNum(r.ССПлан);
+      const ssPred = toNum(r.ССПред);
+      const ssFact = toNum(r.ССФакт);
+      const ostatokSS = (ssPlan && ssPlan !== 0) ? (ssPlan - ssFact) : (ssPred - ssFact);
+      ssAbs += Math.abs(ostatokSS);
+    });
+  return { bal, ssAbs };
+}
+
+function buildHistory(){
+  const wrap=document.getElementById('tblHist');wrap.innerHTML='';
+  const tbl=document.createElement('table');
+  const trh=document.createElement('tr');['Дата','kз','Остаток','Прямые','Косвенные','Сальдо'].forEach(h=>trh.appendChild(Object.assign(document.createElement('th'),{textContent:h})));tbl.appendChild(trh);
+
+  const dataArr=[];
+  store.forEach((imp, idx)=>{
+    const { bal, ssAbs } = calcTotals(imp.data);
+const ind = ssAbs * imp.coef;
+const sal = bal - ssAbs - ind;
+
+// Новые серии для графика: суммы по импорту
+let ssb = 0, ssf = 0; // ssb = СС (план/пред), ssf = СС факт
+imp.data
+  .filter(r => r.__status !== 'deleted')
+  .forEach(r => {
+    const ssPlan = toNum(r.ССПлан);
+    const ssPred = toNum(r.ССПред);
+    const ssFact = toNum(r.ССФакт);
+    const base = (ssPlan && ssPlan !== 0) ? ssPlan : ssPred;
+    ssb += base;
+    ssf += ssFact;
+  });
+
+
+    const tr=document.createElement('tr');
+    if (idx % 2 === 1) tr.style.background = '#f5f5f5';
+    tr.appendChild(Object.assign(document.createElement('td'),{textContent:fmtDate(imp.date)}));
+    const tdCoef=document.createElement('td');tdCoef.textContent=imp.coef.toFixed(2);
+    tdCoef.addEventListener('dblclick',()=>{
+      const i=Object.assign(document.createElement('input'),{type:'number',step:'0.01',min:'0',value:imp.coef.toFixed(2),className:'cell-edit'});
+      tdCoef.textContent='';tdCoef.appendChild(i);i.focus();
+      i.addEventListener('blur',()=>{imp.coef=parseFloat(i.value)||0;tdCoef.textContent=imp.coef.toFixed(2);save();buildHistory();});
+    });
+    tr.appendChild(tdCoef);
+    [bal,ssAbs,ind,sal].forEach(v=>{
+      const td=document.createElement('td');td.textContent=sep(v);if(v<0)td.classList.add('neg');tr.appendChild(td);
+    });
+    tbl.appendChild(tr);
+    dataArr.push({ date: fmtDate(imp.date), bal, dir: ssAbs, ind, sal, ssb, ssf });
+  });
+  wrap.appendChild(tbl);
+
+// Запоминаем последние данные графика для перерисовки при ресайзе
+window.__lastHistoryData = dataArr;
+
+// Рисуем график на Главной (История импортов)
+drawChart(window.__lastHistoryData);
+
+// Один раз подписываемся на изменение размера окна
+if (!window.__histResizeInit) {
+  window.__histResizeInit = true;
+  window.addEventListener('resize', () => {
+    if (window.__lastHistoryData) {
+      drawChart(window.__lastHistoryData);
+    }
+  });
+}
+
+save();
+
+}
+
+// Подгоняет канву под ширину карточки + HiDPI (чёткая отрисовка)
+function fitHiDPICanvas(canvas, cssWidth, cssHeight) {
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  // Визуальный (CSS) размер — сколько пикселей занимает на экране
+  canvas.style.width  = cssWidth + 'px';
+  canvas.style.height = cssHeight + 'px';
+  // Внутренний (реальный) размер — умножаем на DPI для резкости
+  canvas.width  = Math.round(cssWidth  * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
+
+  const ctx = canvas.getContext('2d');
+  // Единицы измерения снова в «CSS-пикселях»
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return ctx;
+}
+
+
+/* -------------- chart drawing with multi-series & zero line -------------- */
+function drawChart(arr){
+  // Канва графика на ГЛАВНОЙ (История импортов (итоги))
+  const c = document.getElementById('canvas');
+
+  // Ширина — по карточке; высота как была (360). Только CSS-пиксели!
+  const parent = c.parentElement;
+  const cssWidth  = Math.max(320, parent.clientWidth - 40); // чуть минус поля карточки
+  const cssHeight = 360;
+
+  // HiDPI-подгонка: внутр. размер умножается на DPR, рисуем в CSS-пикселях
+  const ctx = fitHiDPICanvas(c, cssWidth, cssHeight);
+
+  // Размеры для ВСЕХ расчётов — только CSS-пиксели
+  const W = c.clientWidth;
+  const H = c.clientHeight;
+
+  // Очистка и ранний выход
+  ctx.clearRect(0, 0, W, H);
+  if (!arr.length) return;
+
+  // Какие серии показываем (чекбоксы под таблицей)
+  const checks = document.querySelectorAll('.chk');
+// добавили ssb и ssf — будут совпадать с data-s у новых чекбоксов
+const show = { bal:false, dir:false, ind:false, sal:false, ssb:false, ssf:false };
+checks.forEach(ch => show[ch.dataset.s] = ch.checked);
+
+// если ни одна из 6 серий не выбрана — выходим
+if (!show.bal && !show.dir && !show.ind && !show.sal && !show.ssb && !show.ssf) return;
+
+
+  // Параметры поля/осей
+  const padX = 90, padY = 50, topGap = 30, rightGap = 10;
+
+  // Цвета серий (как были)
+  const colors = {
+  bal:'#4caf50',   // Остаток
+  dir:'#ff9800',   // Прямые
+  ind:'#9c27b0',   // Косвенные
+  sal:'#2196f3',   // Сальдо
+  ssb:'#06f432',   // СС (план/пред) — цвет соответствует чекбоксу
+  ssf:'#f805bb',   // СС факт — цвет соответствует чекбоксу
+};
+
+// добавили новые серии; всё остальное (подписи осей, точки, подписи) работает как раньше
+const series = ['bal','dir','ind','sal','ssb','ssf'];
+
+  const active = series.filter(s => show[s]);
+
+  // Диапазоны и шаг по X
+  const mins = active.map(s => Math.min(...arr.map(o => o[s])));
+  const maxs = active.map(s => Math.max(...arr.map(o => o[s])));
+  const min = Math.min(...mins), max = Math.max(...maxs), rng = max - min || 1;
+
+  const step = (W - padX - rightGap) / Math.max(1, (arr.length - 1));
+
+  /* Оси */
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padX, topGap);
+  ctx.lineTo(padX, H - padY);
+  ctx.lineTo(W - rightGap, H - padY);
+  ctx.stroke();
+
+  /* Нулевая пунктирная линия */
+  if (min < 0 && max > 0) {
+    const y0 = H - padY - ((0 - min) / rng) * (H - padY - topGap);
+    ctx.setLineDash([6,4]);
+    ctx.strokeStyle = '#f88';
+    ctx.beginPath();
+    ctx.moveTo(padX, y0);
+    ctx.lineTo(W - rightGap, y0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  /* Деления Y */
+  ctx.fillStyle = '#666'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let i = 0; i <= 5; i++) {
+    const y = H - padY - i * (H - padY - topGap) / 5;
+    const val = min + i * rng / 5;
+    ctx.beginPath(); ctx.moveTo(padX - 4, y); ctx.lineTo(padX, y); ctx.stroke();
+    ctx.fillText(sep(val.toFixed(0)), padX - 8, y);
+  }
+
+  /* Деления и метки X (даты) */
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  arr.forEach((o, i) => {
+    const x = padX + i * step;
+    ctx.beginPath(); ctx.moveTo(x, H - padY); ctx.lineTo(x, H - padY + 4); ctx.stroke();
+    ctx.fillText(o.date, x, H - padY + 6);
+  });
+
+  /* Рисуем активные серии */
+  active.forEach(s => {
+    ctx.strokeStyle = colors[s];
+    ctx.lineWidth = 2;
+
+    // Линия
+    ctx.beginPath();
+    arr.forEach((o, i) => {
+      const x = padX + i * step;
+      const y = H - padY - ((o[s] - min) / rng) * (H - padY - topGap);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Точки + подписи значений
+    ctx.fillStyle = colors[s];
+    arr.forEach((o, i) => {
+      const x = padX + i * step;
+      const y = H - padY - ((o[s] - min) / rng) * (H - padY - topGap);
+      ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillText(sep(Math.round(o[s])), x + 6, y - 10);
+    });
+  });
+}
+
+
+/* ════════════════════════════════════════════════════════ DOMAIN ═════════════════════════════════════════════════════════ */
+/* ---------- COEFFICIENTS MODULE ---------- */
+function calculateCoefficients(data) {
+  // Проверяем, что data - это массив, если нет - делаем массивом
+  const dataArray = Array.isArray(data) ? data : [data];
+  
+  return dataArray.map(r => {
+    const netSum = (r.СуммаЗаказа || 0) - (r.Дизайнер || 0) - (r.Безнал || 0);
+    const coefPred = r.ССПред > 0 ? netSum / r.ССПред : 0;
+    const coefPlan = r.ССПлан > 0 ? netSum / r.ССПлан : 0;
+    const себестоимость = r.ССФакт || r.ССПлан || r.ССПред || 0;
+    const margin = r.СуммаЗаказа > 6 ? ((netSum - себестоимость) / r.СуммаЗаказа * 100) : 0;
+    const coefFinal = (r.ССПлан > 0 && себестоимость > 0) ? netSum / себестоимость : NaN; // Коэф.Итог (не считаем, если ССПлан = 0)
+    const overrun   = r.ССПлан > 0 ? (r.ССПлан - себестоимость) : NaN;          // ОстатокСС (если ССПлан=0, ставим NaN)
+
+    return {...r, netSum, coefPred, coefPlan, margin, coefFinal, overrun};
+  });
+}
+// Хелпер: среднее по полю key с фильтрацией "валидных" значений
+function avgOf(coefData, key, predicate) {
+  const filtered = (predicate ? coefData.filter(predicate) : coefData)
+    .map(r => r[key])
+    .filter(v => Number.isFinite(v));
+  return filtered.length ? filtered.reduce((s, v) => s + v, 0) / filtered.length : NaN;
+}
+
+// === Универсальный инлайн-редактор числовых ячеек ===
+// Гарантируем, что редактирование можно делать "подряд" без перезагрузки,
+// закрывая предыдущий редактор перед открытием нового.
+let __activeCellEditor = null;
+
+function closeActiveEditor(commit = true) {
+  if (!__activeCellEditor) return;
+  const { commitFn, cancelFn } = __activeCellEditor;
+  if (commit && typeof commitFn === 'function') commitFn();
+  if (!commit && typeof cancelFn === 'function') cancelFn();
+  __activeCellEditor = null;
+}
+
+function makeEditableNumericCell(td, row, field, rerender) {
+  td.style.cursor = 'text';
+  td.style.borderBottom = '1px dashed #ccc';
+  td.title = 'Двойной клик для редактирования';
+
+  td.addEventListener('dblclick', () => {
+    // закрыть предыдущий редактор, если он открыт
+    closeActiveEditor(true);
+    if (td.querySelector('input')) return;
+
+    const currentValue = row[field] || 0;
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = String(currentValue).replace('.', ','); // поддержка запятой
+    inp.className = 'cell-edit';
+    inp.style.cssText = 'width:100%;border:1px solid #2196f3;border-radius:4px;padding:2px;text-align:right';
+
+    const original = td.textContent;
+    td.textContent = '';
+    td.appendChild(inp);
+    inp.focus(); inp.select();
+
+    const commit = () => {
+      const raw = inp.value.trim().replace(/\s+/g, '').replace(',', '.');
+      const v = (typeof toNum === 'function') ? toNum(raw) : (parseFloat(raw) || 0);
+
+      row[field] = v;                        // записываем в исходный объект
+      if (typeof save === 'function') save();// сохранить в LocalStorage, если есть
+
+
+      td.textContent = sep(row[field] || 0);
+      td.style.background = '#fffde7';
+      setTimeout(() => (td.style.background = ''), 300);
+
+      if (typeof rerender === 'function') rerender(); // пересчёт коэфов/таблиц
+      __activeCellEditor = null;
+    };
+
+    const cancel = () => {
+      td.textContent = original;
+      __activeCellEditor = null;
+    };
+
+    __activeCellEditor = { commitFn: commit, cancelFn: cancel };
+
+    inp.addEventListener('blur', commit);
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') commit();
+      if (e.key === 'Escape') cancel();
+    });
+  });
+}
+
+
+// Карточки для секции "Удаленные": средние с корректными правилами
+function updateDeletedCoefStats(rows) {
+  if (!Array.isArray(rows)) rows = [];
+
+  const coefDataAll = calculateCoefficients(rows);
+  const avgPred = avgOf(coefDataAll, 'coefPred', r => r.coefPred > 0);
+  const avgPlan = avgOf(coefDataAll, 'coefPlan', r => r.coefPlan > 0);
+
+  const marginRows = rows.filter(r =>
+    (typeof toNum === 'function' ? toNum(r.СуммаЗаказа) : (r.СуммаЗаказа || 0)) > 1
+  );
+  const avgMargin = marginRows.length
+    ? avgOf(calculateCoefficients(marginRows), 'margin')
+    : NaN;
+
+  const set = (id, val, fmt) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = Number.isFinite(val) ? fmt(val) : '—';
+  };
+  set('coefDelAvgPred',   avgPred,   v => v.toFixed(2));
+  set('coefDelAvgPlan',   avgPlan,   v => v.toFixed(2));
+  set('coefDelAvgMargin', avgMargin, v => v.toFixed(1) + '%');
+}
+
+
+
+// Функция переключения секции удаленных
+function toggleDeletedCoef() {
+  const content = document.getElementById('coefDeletedContent');
+  const icon = document.getElementById('coefToggleIcon');
+
+  if (!content || !icon) return;
+
+  if (content.classList.contains('collapsed')) {
+    content.classList.remove('collapsed');
+    icon.classList.remove('collapsed');
+  } else {
+    content.classList.add('collapsed');
+    icon.classList.add('collapsed');
+  }
+}
+
+// Отображение архива импортов коэффициентов
+function renderCoefImportsArchive() {
+  const container = document.getElementById('coefImportsArchive');
+  container.innerHTML = '';
+  
+  if (store.length === 0) {
+    container.innerHTML = emptyState('Нет загруженных данных');
+    return;
+  }
+  
+  let selectedIndex = store.length - 1;
+  
+  store.forEach((imp, index) => {
+    const importItem = document.createElement('div');
+    importItem.className = 'coef-import-item';
+    if (index === selectedIndex) importItem.classList.add('active');
+    
+    // Считаем статистику
+    const activeData = imp.data.filter(d => d.__status !== 'deleted');
+    const activeCount = activeData.length;
+    const deletedCount = imp.data.filter(d => d.__status === 'deleted').length;
+    
+    // Рассчитываем средние показатели
+    let avgPred = 0, avgPlan = 0, avgMargin = 0, changedCount = 0;
+    
+    if (activeCount > 0) {
+  const coefData = calculateCoefficients(activeData);
+
+  // Считаем средние коэффициенты только по тем договорам, где коэффициенты > 0
+  const validPred = coefData.filter(r => r.coefPred > 0);
+  const validPlan = coefData.filter(r => r.coefPlan > 0);
+
+  avgPred = validPred.length
+    ? validPred.reduce((s, r) => s + r.coefPred, 0) / validPred.length
+    : NaN;
+
+  avgPlan = validPlan.length
+    ? validPlan.reduce((s, r) => s + r.coefPlan, 0) / validPlan.length
+    : NaN;
+
+  // Считаем среднюю маржу только по договорам с суммой > 1
+  const validMarginData = activeData.filter(d => d.СуммаЗаказа > 1);
+  if (validMarginData.length > 0) {
+    const validCoefs = calculateCoefficients(validMarginData);
+    avgMargin = validCoefs.reduce((s, r) => s + r.margin, 0) / validCoefs.length;
+  } else {
+    avgMargin = NaN;
+  }
+
+  // Считаем изменившиеся (если есть предыдущий импорт)
+  if (index > 0) {
+    const prev = store[index - 1].data;
+    const threshold = 0.05; // 5% порог
+    activeData.forEach(row => {
+      const prevRow = prev.find(p => p.Номер === row.Номер);
+      if (prevRow) {
+        const currCoefs = calculateCoefficients([row])[0];
+        const prevCoefs = calculateCoefficients([prevRow])[0];
+
+        const predChange = (prevCoefs.coefPred > 0)
+          ? Math.abs(currCoefs.coefPred - prevCoefs.coefPred) / prevCoefs.coefPred
+          : 0;
+
+        const planChange = (prevCoefs.coefPlan > 0)
+          ? Math.abs(currCoefs.coefPlan - prevCoefs.coefPlan) / prevCoefs.coefPlan
+          : 0;
+
+        if (predChange > threshold || planChange > threshold) changedCount++;
+      }
+    });
+  }
+}
+
+    
+    // Основная информация - в одну строку с расширенной статистикой
+    const info = document.createElement('div');
+    info.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:12px;';
+    info.innerHTML = `
+      <strong style="font-size:13px;">${fmtDate(imp.date)}</strong>
+      <span style="color:#666">
+        ${activeCount} акт. | ${deletedCount} удал. | k=${imp.coef} | 
+        Ср.предв=${avgPred.toFixed(2)} | Ср.план=${avgPlan.toFixed(2)} | 
+        Ср.маржа=${avgMargin.toFixed(1)}% | Изм=${changedCount}
+      </span>
+    `;
+    
+    importItem.appendChild(info);
+    
+    importItem.dataset.index = index;
+importItem.onclick = () => {
+  document.querySelectorAll('.coef-import-item').forEach(item => item.classList.remove('active'));
+  importItem.classList.add('active');
+  selectedCoefImportIndex = index;      // ← запоминаем выбранный импорт
+  renderCoefTableEnhanced(index);
+};
+
+    
+    container.appendChild(importItem);
+  });
+  
+  // По умолчанию показываем последний импорт и помечаем его как активный
+if (store.length > 0) {
+  selectedCoefImportIndex = store.length - 1;
+  renderCoefTableEnhanced(selectedCoefImportIndex);
+  const items = container.querySelectorAll('.coef-import-item');
+  if (items.length) items[items.length - 1].classList.add('active');
+}
+
+}
+
+// Улучшенная функция отображения таблицы с фильтрами
+function renderCoefTableEnhanced(index) {
+  if (!store.length) return;
+  if (index < 0 || index >= store.length) return;
+
+  const imp   = store[index] || store[store.length - 1];
+  const prev  = (index > 0 && store[index - 1]) ? store[index - 1].data : [];
+  const threshold       = Number(document.getElementById('coefThreshold').value) / 100;
+  const onlyChanged     = !!document.getElementById('coefOnlyChanged').checked;
+  const onlySignificant = !!document.getElementById('coefOnlySignificant')?.checked;
+
+  // Информация о выбранном импорте
+  document.getElementById('coefDataInfo').innerHTML = `
+    Импорт: <strong>${fmtDate(imp.date)}</strong><br>
+    Договоров: <strong>${imp.data.length}</strong><br>
+    Коэффициент косвенных: <strong>${imp.coef}</strong>
+  `;
+  document.getElementById('coefDate').textContent = `от ${fmtDate(imp.date)}`;
+
+  // Обновляем карточки (средние/изменившиеся/удалённые)
+  updateCoefStats(imp.data, prev, threshold);
+
+  // Активные договоры
+  renderCoefTableSection('coefTable', imp.data, prev, threshold, onlyChanged, onlySignificant, false);
+
+  // Удалённые/завершённые договоры
+  renderCoefTableSection('coefDeletedTable', imp.data, prev, threshold, false, false, true);
+}
+
+
+// Функция отображения секции таблицы
+function renderCoefTableSection(containerId, data, prev, threshold, onlyChanged, onlySignificant, onlyDeleted) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+
+  // Выборка: только удалённые или только активные
+  const rows = Array.isArray(data) ? data : [];
+  let filteredData = rows.filter(r => onlyDeleted ? r.__status === 'deleted' : r.__status !== 'deleted');
+
+  // Если рендерим удалённые — обновим счётчик и карточки над таблицей
+  if (onlyDeleted) {
+    const deletedCountEl = document.getElementById('coefDeletedCount');
+    if (deletedCountEl) deletedCountEl.textContent = filteredData.length;
+    if (typeof updateDeletedCoefStats === 'function') {
+      updateDeletedCoefStats(filteredData); // карточки: Ср. коэф. предв/план/маржа
+    }
+  }
+
+  if (!filteredData.length) {
+    container.innerHTML = emptyState('Нет данных');
+    return;
+  }
+
+  // Универсальный "перерисовщик" после редактирования
+  const rerender = () => {
+    if (typeof reRenderCoefs === 'function') reRenderCoefs();
+    else if (typeof renderCoefTableEnhanced === 'function') {
+      const idx = (typeof selectedCoefImportIndex === 'number' && selectedCoefImportIndex >= 0)
+        ? selectedCoefImportIndex
+        : (store.length ? store.length - 1 : 0);
+      renderCoefTableEnhanced(idx);
+    }
+  };
+
+  // Таблица
+  const tbl = document.createElement('table');
+
+  // Шапка
+  const trh = document.createElement('tr');
+  const headers = showCompactView 
+  ? ['№','Сумма заказа','Дизайнер','Безнал','СС пред','СС план','Коэф.предв','Коэф.план','Маржа %']
+  : ['№','Наименование','Прим.','Сумма заказа','Дизайнер','Безнал','СС пред','СС план','Коэф.предв','Коэф.план','Маржа %'];
+  
+headers.forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    trh.appendChild(th);
+  });
+  tbl.appendChild(trh);
+
+  // Счётчик видимых (для активных)
+  let visibleCount = 0;
+
+  filteredData.forEach(row => {
+    const coefs = calculateCoefficients([row])[0];
+    const prevRow = prev.find(p => p.Номер === row.Номер);
+
+    // Фильтры применяем ТОЛЬКО для активных
+    if (!onlyDeleted) {
+      let changed = false;
+      let predChange = 0, planChange = 0;
+
+      if (prevRow) {
+        const prevCoefs = calculateCoefficients([prevRow])[0];
+        predChange = prevCoefs.coefPred > 0
+          ? Math.abs((coefs.coefPred - prevCoefs.coefPred) / prevCoefs.coefPred)
+          : 0;
+        planChange = prevCoefs.coefPlan > 0
+          ? Math.abs((coefs.coefPlan - prevCoefs.coefPlan) / prevCoefs.coefPlan)
+          : 0;
+        changed = (predChange > threshold) || (planChange > threshold);
+      }
+
+      if (onlyChanged && !(prevRow && changed)) return;
+
+      if (onlySignificant) {
+        if (!prevRow) return;
+        const prevCoefs = calculateCoefficients([prevRow])[0];
+        const pCh = prevCoefs.coefPred > 0 ? Math.abs(coefs.coefPred - prevCoefs.coefPred) / prevCoefs.coefPred : 0;
+        const lCh = prevCoefs.coefPlan > 0 ? Math.abs(coefs.coefPlan - prevCoefs.coefPlan) / prevCoefs.coefPlan : 0;
+        if (pCh < 0.10 && lCh < 0.10) return;
+      }
+    }
+
+    const tr = document.createElement('tr');
+
+    // Классы подсветки
+    if (onlyDeleted) {
+      tr.classList.add('deleted-row'); // зачёркивание снято CSS для #coefView #coefDeletedContent
+    } else {
+      let changeClass = '';
+      if (!prevRow) changeClass = 'coef-new';
+      else {
+        const prevCoefs = calculateCoefficients([prevRow])[0];
+        const predChange = prevCoefs.coefPred > 0 ? (coefs.coefPred - prevCoefs.coefPred) / prevCoefs.coefPred : 0;
+        const planChange = prevCoefs.coefPlan > 0 ? (coefs.coefPlan - prevCoefs.coefPlan) / prevCoefs.coefPlan : 0;
+        if (Math.abs(predChange) > threshold || Math.abs(planChange) > threshold) {
+          changeClass = (predChange > 0 || planChange > 0) ? 'coef-increased' : 'coef-decreased';
+        }
+      }
+      if (changeClass) tr.className = changeClass;
+    }
+
+    // Номер
+const tdNum = document.createElement('td');
+const contractInfo = getContractInfo(row.Номер);
+if (showCompactView && contractInfo.exists) {
+  tdNum.textContent = formatCompactContract(row.Номер, 25, 10);
+  tdNum.title = `${contractInfo.name}\n${contractInfo.comment || ''}`;
+} else {
+  tdNum.textContent = row.Номер;
+  if (contractInfo.exists) {
+    tdNum.title = `${contractInfo.name}\n${contractInfo.comment || ''}`;
+  }
+}
+tr.appendChild(tdNum);
+
+// Наименование и Примечание (если не компактный режим)
+if (!showCompactView) {
+  const tdName = document.createElement('td');
+  tdName.textContent = contractInfo.name || '...';
+  tdName.className = 'contract-name-col';
+  tr.appendChild(tdName);
+  
+  const tdComment = document.createElement('td');
+  tdComment.textContent = contractInfo.comment || '';
+  tdComment.className = 'contract-comment-col';
+  tr.appendChild(tdComment);
+}
+
+    // Числовые и справочные поля
+    ['СуммаЗаказа','Дизайнер','Безнал','ССПред','ССПлан'].forEach(field => {
+      const td = document.createElement('td');
+      td.textContent = field === 'Номер' ? row[field] : sep(row[field] || 0);
+      tr.appendChild(td);
+
+      // Инлайн-редактирование: и в активных, и в удалённых для полей "Дизайнер"/"Безнал"
+      if (field === 'Дизайнер' || field === 'Безнал') {
+        makeEditableNumericCell(td, row, field, rerender);
+      }
+    });
+
+    // Коэф.предв с дельтой
+    const tdPred = document.createElement('td');
+    tdPred.textContent = coefs.coefPred.toFixed(2);
+    if (prevRow) {
+      const prevCoefs = calculateCoefficients([prevRow])[0];
+      if (prevCoefs && prevCoefs.coefPred > 0) {
+        const d = ((coefs.coefPred - prevCoefs.coefPred) / prevCoefs.coefPred) * 100;
+        const dRounded = Number(d.toFixed(1));
+        if (dRounded !== 0) {
+          const sp = document.createElement('span');
+          sp.textContent = ` (${dRounded > 0 ? '+' : ''}${dRounded.toFixed(1)}%)`;
+          sp.style.marginLeft = '4px';
+          sp.style.fontWeight = '600';
+          sp.style.color = dRounded > 0 ? '#2e7d32' : '#c62828';
+          tdPred.appendChild(sp);
+        }
+      }
+    }
+    tr.appendChild(tdPred);
+
+    // Коэф.план с дельтой
+    const tdPlan = document.createElement('td');
+    tdPlan.textContent = coefs.coefPlan.toFixed(2);
+    if (prevRow) {
+      const prevCoefs2 = calculateCoefficients([prevRow])[0];
+      if (prevCoefs2 && prevCoefs2.coefPlan > 0) {
+        const d2 = ((coefs.coefPlan - prevCoefs2.coefPlan) / prevCoefs2.coefPlan) * 100;
+        const d2Rounded = Number(d2.toFixed(1));
+        if (d2Rounded !== 0) {
+          const sp2 = document.createElement('span');
+          sp2.textContent = ` (${d2Rounded > 0 ? '+' : ''}${d2Rounded.toFixed(1)}%)`;
+          sp2.style.marginLeft = '4px';
+          sp2.style.fontWeight = '600';
+          sp2.style.color = d2Rounded > 0 ? '#2e7d32' : '#c62828';
+          tdPlan.appendChild(sp2);
+        }
+      }
+    }
+    tr.appendChild(tdPlan);
+
+    // Маржа (цветовая шкала)
+    const tdMargin = document.createElement('td');
+    tdMargin.textContent = coefs.margin.toFixed(1) + '%';
+    tdMargin.style.fontWeight = '500';
+    if      (coefs.margin >= 40) tdMargin.className = 'margin-high';
+    else if (coefs.margin >= 25) tdMargin.className = 'margin-good';
+    else if (coefs.margin >= 15) tdMargin.className = 'margin-ok';
+    else                         tdMargin.className = 'margin-low';
+    tr.appendChild(tdMargin);
+
+    tbl.appendChild(tr);
+    if (!onlyDeleted) visibleCount++;
+  });
+
+  container.appendChild(tbl);
+
+  // Подпись с количеством строк (для активных)
+  if (!onlyDeleted) {
+    const info = document.createElement('div');
+    info.className = 'table-info';
+    info.textContent = `Показано строк: ${visibleCount}`;
+    container.appendChild(info);
+  }
+
+  // Обновляем счётчик в шапке (если элемент есть)
+  const totalEl = document.getElementById('coefTotalCount');
+  if (!onlyDeleted && totalEl) totalEl.textContent = visibleCount;
+}
+
+// Обновление статистики коэффициентов
+function updateCoefStats(data, prev, threshold) {
+  const activeData   = data.filter(r => r.__status !== 'deleted');
+  const deletedCount = data.filter(r => r.__status === 'deleted').length;
+
+  if (activeData.length === 0) {
+    ['coefAvgPred','coefAvgPlan','coefAvgMargin','coefChangedCount'].forEach(id =>
+      document.getElementById(id).textContent = '—'
+    );
+    return;
+  }
+
+  // Считаем средние коэффициенты только по валидным значениям (> 0)
+  const coefDataAll = calculateCoefficients(activeData);
+  const avgPred = avgOf(coefDataAll, 'coefPred', r => r.coefPred > 0);
+  const avgPlan = avgOf(coefDataAll, 'coefPlan', r => r.coefPlan > 0);
+
+  // Средняя маржа — по договорам с СуммаЗаказа > 1, через avgOf
+  const marginRows = activeData.filter(r =>
+    (typeof toNum === 'function' ? toNum(r.СуммаЗаказа) : (r.СуммаЗаказа || 0)) > 1
+  );
+  const avgMargin = marginRows.length
+    ? avgOf(calculateCoefficients(marginRows), 'margin')
+    : NaN;
+
+  // Считаем изменившиеся (с защитой от деления на 0)
+  let changedCount = 0;
+  activeData.forEach(row => {
+    const prevRow = prev.find(p => p.Номер === row.Номер);
+    if (!prevRow) return;
+
+    const currCoefs = calculateCoefficients([row])[0];
+    const prevCoefs = calculateCoefficients([prevRow])[0];
+
+    const predChange = prevCoefs.coefPred > 0
+      ? Math.abs(currCoefs.coefPred - prevCoefs.coefPred) / prevCoefs.coefPred
+      : 0;
+
+    const planChange = prevCoefs.coefPlan > 0
+      ? Math.abs(currCoefs.coefPlan - prevCoefs.coefPlan) / prevCoefs.coefPlan
+      : 0;
+
+    if (predChange > threshold || planChange > threshold) changedCount++;
+  });
+
+  // Выводим (NaN → '—')
+  document.getElementById('coefAvgPred').textContent   = Number.isFinite(avgPred)   ? avgPred.toFixed(2)   : '—';
+  document.getElementById('coefAvgPlan').textContent   = Number.isFinite(avgPlan)   ? avgPlan.toFixed(2)   : '—';
+  document.getElementById('coefAvgMargin').textContent = Number.isFinite(avgMargin) ? (avgMargin.toFixed(1) + '%') : '—';
+  document.getElementById('coefChangedCount').textContent = changedCount;
+  document.getElementById('coefDeletedCount').textContent  = deletedCount;
+}
+
+
+// Функция переключения секции удаленных
+function drawCoefChart() {
+  const c = document.getElementById('coefChart');
+  const parent = c.parentElement;
+  const cssWidth  = Math.max(320, parent ? parent.clientWidth - 40 : 600);
+  const cssHeight = c.clientHeight || 300;
+  const ctx = fitHiDPICanvas(c, cssWidth, cssHeight);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+  if (store.length === 0) return;
+  
+  const dataArr = [];
+  store.forEach(imp => {
+    const coefData = calculateCoefficients(imp.data.filter(r => r.__status !== 'deleted'));
+
+// Среднее по предв./плану — исключаем нули:
+const avgCoefPred = avgOf(coefData, 'coefPred', r => r.coefPred > 0);
+const avgCoefPlan = avgOf(coefData, 'coefPlan', r => r.coefPlan > 0);
+
+// Маржа — как и раньше по всем (или при желании — только по Sum>1, аналогично шагу 2)
+const avgMargin   = avgOf(coefData, 'margin');
+
+    
+    dataArr.push({
+      date: fmtDate(imp.date),
+      coefPred: avgCoefPred,
+      coefPlan: avgCoefPlan,
+      margin: avgMargin
+    });
+  });
+  
+  const padX = 90, padY = 50, topGap = 30, rightGap = 10;
+  const W = cssWidth, H = cssHeight;
+  const colors = {coefPred: '#4caf50', coefPlan: '#2196f3', margin: '#ff9800'};
+  
+  const vals = [...dataArr.map(d => d.coefPred), ...dataArr.map(d => d.coefPlan), ...dataArr.map(d => d.margin)];
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const rng = max - min || 1;
+  const step = (W - padX - rightGap) / (dataArr.length - 1 || 1);
+  
+  // Оси
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padX, topGap);
+  ctx.lineTo(padX, H - padY);
+  ctx.lineTo(W - rightGap, H - padY);
+  ctx.stroke();
+  
+  // Деления Y
+  ctx.fillStyle = '#666';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i <= 5; i++) {
+    const y = H - padY - i * (H - padY - topGap) / 5;
+    const val = min + i * rng / 5;
+    ctx.beginPath();
+    ctx.moveTo(padX - 4, y);
+    ctx.lineTo(padX, y);
+    ctx.stroke();
+    ctx.fillText(val.toFixed(1), padX - 8, y);
+  }
+  
+  // Деления X
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  dataArr.forEach((o, i) => {
+    const x = padX + i * step;
+    ctx.beginPath();
+    ctx.moveTo(x, H - padY);
+    ctx.lineTo(x, H - padY + 4);
+    ctx.stroke();
+    ctx.fillText(o.date, x, H - padY + 6);
+  });
+  
+  // Линии графика
+  ['coefPred', 'coefPlan', 'margin'].forEach(series => {
+    ctx.strokeStyle = colors[series];
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    
+    dataArr.forEach((o, i) => {
+      const x = padX + i * step;
+      const y = H - padY - ((o[series] - min) / rng) * (H - padY - topGap);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.stroke();
+    
+    // Маркеры
+    ctx.fillStyle = colors[series];
+    dataArr.forEach((o, i) => {
+      const x = padX + i * step;
+      const y = H - padY - ((o[series] - min) / rng) * (H - padY - topGap);
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+  });
+  
+  // Легенда
+  const legend = [
+    {name: 'Коэф.предв', color: colors.coefPred},
+    {name: 'Коэф.план', color: colors.coefPlan},
+    {name: 'Маржа %', color: colors.margin}
+  ];
+  
+  ctx.textAlign = 'left';
+  legend.forEach((item, i) => {
+    const x = W - 150;
+    const y = topGap + 20 * i;
+    ctx.fillStyle = item.color;
+    ctx.fillRect(x, y, 15, 15);
+    ctx.fillStyle = '#333';
+    ctx.fillText(item.name, x + 20, y + 12);
+  });
+}
+
+/* ---------- JSON & CSV helpers ---------- */
+const exportJSON = () => {
+  // Собираем полное состояние приложения
+  const fullExport = {
+    version: "2.0",
+    exportDate: new Date().toISOString().split('T')[0],
+    data: {
+      store: store,
+      contractsDirectory: contractsDirectory,
+      pfStore: pfStore,
+      settings: {
+        compactViewMode: JSON.parse(localStorage.getItem('compactViewMode') || 'false'),
+        dashCompact: JSON.parse(localStorage.getItem('dashCompact') || 'false'),
+        dashCoef: localStorage.getItem('dashCoef') || '0.70',
+        pfThreshold: Number(localStorage.getItem(LS_THR) || 0),
+        histChecks: JSON.parse(localStorage.getItem(HIST_CHECKS_LS) || '{}')
+      }
+    }
+  };
+  
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(fullExport, null, 2)], {type: 'application/json'}));
+  a.download = `full_backup_${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+const importJSON = file => {
+  const fr = new FileReader();
+  fr.onload = e => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      
+      // Проверяем версию - если это новый формат
+      if (imported.version && imported.version === "2.0") {
+        // Импортируем все данные
+        store = imported.data.store || [];
+        contractsDirectory = imported.data.contractsDirectory || {};
+        pfStore = imported.data.pfStore || [];
+        
+        // Сохраняем основные данные
+        save();
+        saveContractsDirectory();
+        savePf();
+        
+        // Восстанавливаем настройки
+        if (imported.data.settings) {
+          const s = imported.data.settings;
+          localStorage.setItem('compactViewMode', JSON.stringify(s.compactViewMode || false));
+          localStorage.setItem('dashCompact', JSON.stringify(s.dashCompact || false));
+          localStorage.setItem('dashCoef', s.dashCoef || '0.70');
+          localStorage.setItem(LS_THR, s.pfThreshold || 0);
+          localStorage.setItem(HIST_CHECKS_LS, JSON.stringify(s.histChecks || {}));
+        }
+        
+        showToast('✅ Полный импорт завершён: ' + store.length + ' импортов, ' + pfStore.length + ' сверок ПФ', 'success');
+      } else {
+        // Старый формат - импортируем только store
+        store = Array.isArray(imported) ? imported : [imported];
+        save();
+        showToast('Импорт завершён (старый формат)', 'success');
+      }
+      
+      // Обновляем интерфейс
+      renderArchive();
+      buildHistory();
+      renderCoefImportsArchive();
+      renderPfArchive();
+      renderDirectoryTable();
+      
+    } catch(err) {
+      showToast('Ошибка импорта: ' + err.message, 'error');
+    }
+  };
+  fr.readAsText(file, 'utf-8');
+};
+/* ---------- PF CSV export ---------- */
+function exportPfCsv(rec){
+  const lines = ['Номер;Поле;1С;ПФ;Δ;Статус;Комментарий'];
+  
+  // Получаем текущие настройки фильтров
+  const showMatch = document.getElementById('chkPfMatch').checked;
+  const showOnly1C = document.getElementById('chkPfOnly1C').checked;
+  const showOnlyPf = document.getElementById('chkPfOnlyPf').checked;
+  const showOnlyCommented = document.getElementById('chkPfCommented') ? 
+    document.getElementById('chkPfCommented').checked : false;
+  const thr = Number(document.getElementById('pfRange').value);
+  
+  // Фильтруем данные так же, как на экране
+  const filteredData = rec.mismatches.filter(r => {
+    // Фильтр по комментариям
+    if (showOnlyCommented && !r.comment) return false;
+    
+    // Остальные фильтры
+    if (r.cls === 'pf-diff-row') return Math.abs(r.delta) >= thr;
+    if (r.cls === 'pf-match-row') return showMatch;
+    if (r.cls === 'pf-only1c') return showOnly1C;
+    if (r.cls === 'pf-onlyPf') return showOnlyPf;
+    return true;
+  });
+  
+  filteredData.forEach(r=>{
+    const status = r.st === 'resolved' ? 'Закрыто' : 'Открыто';
+    lines.push([
+      r.num, 
+      r.field||r.msg||'', 
+      r.v1||'', 
+      r.v2||'', 
+      r.delta||'', 
+      status,
+      r.comment||''
+    ].join(';'));
+  });
+  
+  const csv = '\uFEFF' + lines.join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download = `pf_diff_${rec.date.split('-').reverse().join('-')}.csv`;
+  a.click(); 
+  URL.revokeObjectURL(a.href);
+}
+/* ---------- CSV parser с поддержкой Дизайнер и Безнал ---------- */
+/* ---------- валидация шапки CSV ---------- */
+// Сверяет первую строку файла с ожидаемым списком колонок.
+// Возвращает null если всё ок, иначе — текст ошибки для тоста.
+function validateCsvHeader(txt, expectedCols, label){
+  const firstLine = (txt || '').replace(/^\uFEFF/, '').trim().split(/\r?\n/)[0] || '';
+  const got = firstLine.split(';').map(s => s.trim().toLowerCase());
+  const exp = expectedCols.map(s => s.toLowerCase());
+  if (got.length < exp.length) {
+    return `${label}: в шапке ${got.length} колонок вместо ${exp.length}. Ожидается: ${expectedCols.join(';')}`;
+  }
+  for (let i = 0; i < exp.length; i++) {
+    if (got[i] !== exp[i]) {
+      return `${label}: колонка ${i + 1} — «${got[i] || '(пусто)'}», ожидалась «${expectedCols[i]}». Проверьте, тот ли это файл.`;
+    }
+  }
+  return null;
+}
+const CSV_HEADER_1C = ['Номер','СуммаЗаказа','СуммаОплат','ОстатокОплат','ССПред','ССПлан','ССФакт','Дизайнер','Безнал'];
+const CSV_HEADER_PF = ['Номер','СтоимостьЗаказа','СуммаОплат','ОстатокОплат'];
+
+const parseCSV = txt => {
+  const l = txt.trim().split(/\r?\n/).filter(r => r.trim().length > 0);
+  l.shift(); // убираем шапку
+  return l.map(r => {
+    const c = r.split(';');
+    const num = c[0].trim();
+    return {
+      Номер: num,
+      СуммаЗаказа: toNum(c[1]),
+      СуммаОплат: toNum(c[2]),
+      ОстатокОплат: toNum(c[3]),
+      ССПред: toNum(c[4]),
+      ССПлан: toNum(c[5]),
+      ССФакт: toNum(c[6]),
+      Дизайнер: toNum(c[7] || 0),
+      Безнал: toNum(c[8] || 0)
+    };
+  });
+};
+
+// Побочный эффект вынесен отдельно: обновляет справочник по строкам импорта
+function updateDirectoryFromRows(rows) {
+  const newContracts = [];
+  rows.forEach(row => {
+    const num = row.Номер;
+    if (num && !contractsDirectory[num]) {
+      contractsDirectory[num] = { name: '', comment: '' };
+      newContracts.push(num);
+    }
+  });
+  if (newContracts.length > 0) {
+    saveContractsDirectory();
+    importMismatches = newContracts.map(num => ({
+      num,
+      status: 'new',
+      message: 'Новый договор добавлен в справочник с пустым наименованием'
+    }));
+    showMismatchesReport();
+  }
+}
+
+
+  /* ---- CSV Planfix ---- */
+function parsePfCSV(txt){
+  const lines = txt.trim().split(/\r?\n/); lines.shift();          // убираем шапку
+  return lines.map(r=>{
+    const c = r.split(';');
+    return {
+      Номер:           c[0].trim(),
+      СтоимостьЗаказа: toNum(c[1]),
+      СуммаОплат:      toNum(c[2]),
+      ОстатокОплат:    toNum(c[3])
+    };
+  });
+}
+
+/* ---------- импорт CSV ---------- */
+function handleImport(){
+  const file=document.getElementById('file').files[0],date=document.getElementById('impDate').value,
+        coef=parseFloat(document.getElementById('coef').value)||0;
+  if(!file||!date){showToast('Укажите файл и дату', 'warning'); return;}
+  const fr=new FileReader();
+  fr.onload=e=>{
+    const headerErr = validateCsvHeader(e.target.result, CSV_HEADER_1C, 'CSV 1С');
+    if (headerErr) { showToast('⛔ ' + headerErr, 'error'); return; }
+    const rows=parseCSV(e.target.result);
+    if (!rows.length) { showToast('⛔ Файл не содержит строк с данными', 'error'); return; }
+    updateDirectoryFromRows(rows); // побочный эффект отдельно
+    const prev=store.length?store[store.length-1].data:[],meta=buildDiff(prev,rows,date,coef);
+    store.push({date,coef,data:rows,meta});save();
+
+    document.getElementById('currentTitle').textContent=`Таблица договоров от ${fmtDate(date)}`;
+    document.getElementById('currentCard').classList.remove('hidden');
+    renderTable(document.getElementById('tblCurrent'),rows,true);
+    renderArchive();buildHistory();
+    reRenderCoefs();drawCoefChart();
+    document.getElementById('file').value='';document.getElementById('btnLoad').disabled=true;
+    showToast(`✅ Загружено ${rows.length} договоров от ${fmtDate(date)}`, 'success');
+  };fr.readAsText(file,'utf-8');
+}
+
+/* ---------- events ---------- */
+/* ====== PF: включаем кнопку после выбора двух файлов ====== */
+file1cPF.addEventListener('change', checkPfFiles);
+filepf  .addEventListener('change', checkPfFiles);
+function checkPfFiles(){
+  btnPfLoad.disabled = !(file1cPF.files[0] && filepf.files[0] && pfDate.value);
+}
+pfDate.addEventListener('change', checkPfFiles);
+
+/* ====== PF: экспорт CSV — единый обработчик (назначается один раз) ====== */
+document.getElementById('btnPfCsv').addEventListener('click', () => {
+  if (!pfStore.length) { showToast('Нет данных для экспорта', 'warning'); return; }
+  if (selectedPfIndex === null || !pfStore[selectedPfIndex]) selectedPfIndex = pfStore.length - 1;
+  exportPfCsv(pfStore[selectedPfIndex]);
+});
+
+/* ====== PF import handler ====== */
+btnPfLoad.addEventListener('click', ()=>{
+  const f1 = file1cPF.files[0], f2 = filepf.files[0], date = pfDate.value;
+  if(!f1 || !f2 || !date){ showToast('Нужны оба файла и дата', 'warning'); return; }
+  const fr1 = new FileReader(), fr2 = new FileReader();
+  fr1.onload = e1 =>{
+    fr2.onload = e2 =>{
+      const err1C = validateCsvHeader(e1.target.result, CSV_HEADER_1C, 'CSV 1С (для сверки)');
+      if (err1C) { showToast('⛔ ' + err1C, 'error'); return; }
+      // Файл ПФ проверяем мягко — только по количеству колонок (имена в выгрузках ПФ могут отличаться)
+      const pfFirst = (e2.target.result || '').replace(/^\uFEFF/, '').trim().split(/\r?\n/)[0] || '';
+      if (pfFirst.split(';').length < 4) {
+        showToast('⛔ Файл ПФ: в шапке меньше 4 колонок. Ожидается: Номер;СтоимостьЗаказа;СуммаОплат;ОстатокОплат', 'error');
+        return;
+      }
+      const rows1C = parseCSV   (e1.target.result);
+      const rowsPf = parsePfCSV (e2.target.result);
+      const pfRange    = document.getElementById('pfRange');
+      const pfRangeNum = document.getElementById('pfRangeNum');
+      const thr = Number(pfRangeNum.value)||0;
+      const diffArr = buildPfDiff(rows1C, rowsPf);
+      // динамический максимум для ползунка
+      const maxDelta = diffArr.reduce((m, r) => Math.max(m, Math.abs(r.delta || 0)), 0);
+      pfRange.max     = maxDelta;
+      pfRangeNum.max  = maxDelta;
+      const rec = {
+        date,
+        mismatches : diffArr,
+        threshold  : thr,
+        file1C : f1.name,
+        filePf : f2.name
+      };
+      pfStore.push(rec);  savePf();
+      // при новой сверке — это последняя запись
+     selectedPfIndex = pfStore.length - 1;
+
+
+      // UI
+      pfResultTitle.textContent = `Расхождения от ${fmtDate(date)} (${diffArr.length} строк)`;
+      pfResultCard.classList.remove('hidden');
+      renderPfTable(diffArr, thr);
+      renderPfArchive();
+
+      // очистка полей
+      file1cPF.value=''; filepf.value=''; btnPfLoad.disabled=true;
+    };
+    fr2.readAsText(f2, 'utf-8');
+  };
+  fr1.readAsText(f1, 'utf-8');
+});
+/* ====== PF slider bindings ====== */
+const initThr = Number(localStorage.getItem(LS_THR) || 0);
+pfRange.value    = initThr;
+pfRangeNum.value = initThr;
+
+function updateThr(v){
+  pfRange.value = pfRangeNum.value = v;
+  localStorage.setItem(LS_THR, v);
+  if (selectedPfIndex !== null) {
+    // перерисовываем ту сверку, которую выбрали
+    const rec = pfStore[selectedPfIndex];
+    renderPfTable(rec.mismatches, v);
+  }
+}
+pfRange.addEventListener('input', e=>updateThr(e.target.value));
+pfRangeNum.addEventListener('input', e=>updateThr(e.target.value));
+const chkPfOnly1C = document.getElementById('chkPfOnly1C');
+const chkPfOnlyPf = document.getElementById('chkPfOnlyPf');
+const chkPfMatch  = document.getElementById('chkPfMatch');
+
+const chkPfCommented = document.getElementById('chkPfCommented');
+// при переключении любого из четырёх — перерисовываем текущую сверку
+[chkPfOnly1C, chkPfOnlyPf, chkPfMatch, chkPfCommented].forEach(chk =>
+  chk.addEventListener('change', () => {
+    if (selectedPfIndex === null) return;
+    const rec = pfStore[selectedPfIndex];
+    renderPfTable(rec.mismatches, Number(pfRange.value));
+  })
+);
+
+// Coefficients events
+// Текущий выбранный импорт во вкладке «Коэффициенты»
+let selectedCoefImportIndex = null;
+
+// Универсальная перерисовка текущего импорта с учётом фильтров
+function reRenderCoefs() {
+  const idx = (typeof selectedCoefImportIndex === 'number' && selectedCoefImportIndex >= 0 && selectedCoefImportIndex < store.length)
+    ? selectedCoefImportIndex
+    : (store.length ? store.length - 1 : -1);
+  if (idx >= 0) renderCoefTableEnhanced(idx);
+}
+
+document.getElementById('coefOnlyChanged').addEventListener('change', reRenderCoefs);
+document.getElementById('coefOnlySignificant').addEventListener('change', reRenderCoefs); // ← чекбокс «Значительные (>10%)»
+document.getElementById('coefThreshold').addEventListener('input', reRenderCoefs);
+document.getElementById('btnCoefCsv').addEventListener('click', () => {
+  if (!store.length) return;
+  
+  const lastImp = store[store.length - 1];
+  const data = calculateCoefficients(lastImp.data.filter(r => r.__status !== 'deleted'));
+  
+  const lines = ['Номер;СуммаЗаказа;Дизайнер;Безнал;ССПред;ССПлан;ССФакт;Коэф.предв;Коэф.план;Маржа %'];
+  data.forEach(r => {
+    lines.push([
+      r.Номер, r.СуммаЗаказа, r.Дизайнер || 0, r.Безнал || 0,
+      r.ССПред, r.ССПлан, r.ССФакт,
+      r.coefPred.toFixed(2), r.coefPlan.toFixed(2), r.margin.toFixed(1)
+    ].join(';'));
+  });
+  
+  const csv = '\uFEFF' + lines.join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'}));
+  a.download = `coefficients_${lastImp.date}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+/* ════════════════════════════════════════════════════════ EVENTS ═════════════════════════════════════════════════════════ */
+document.getElementById('chkHideDeleted').addEventListener('change', function() {
+  document.body.classList.toggle('hide-deleted', this.checked);
+});
+
+// Кнопка скрытия/показа диаграммы на экране История
+document.getElementById('btnToggleChart').addEventListener('click', function() {
+  const panel = document.getElementById('chartPanel');
+  const hidden = panel.style.display === 'none';
+  panel.style.display = hidden ? '' : 'none';
+  this.textContent = hidden ? '📊 скрыть' : '📊 показать';
+});
+document.getElementById('file').addEventListener('change', checkLoadReady);
+document.getElementById('impDate').addEventListener('change', checkLoadReady);
+document.getElementById('btnLoad').addEventListener('click',handleImport);
+
+function checkLoadReady() {
+  const hasFile = !!document.getElementById('file').files[0];
+  const hasDate = !!document.getElementById('impDate').value;
+  document.getElementById('btnLoad').disabled = !(hasFile && hasDate);
+}
+document.getElementById('btnUndo').addEventListener('click',()=>{
+  if(!store.length)return;
+  if(confirm('Удалить последний импорт?')){
+    store.pop();save();renderArchive();buildHistory();reRenderCoefs();drawCoefChart();
+    const card=document.getElementById('currentCard');
+    if(!store.length){card.classList.add('hidden');}
+    else if(!card.classList.contains('hidden')){
+      // если текущая таблица на экране — показываем предыдущий (теперь последний) импорт
+      const last=store[store.length-1];
+      document.getElementById('currentTitle').textContent=`Таблица договоров от ${fmtDate(last.date)}`;
+      renderTable(document.getElementById('tblCurrent'),last.data,true);
+    }
+  }
+});
+document.getElementById('btnRefresh').addEventListener('click', () => { buildHistory(); showToast('Обновлено', 'success'); });
+document.querySelectorAll('.chk').forEach(ch=>ch.addEventListener('change',buildHistory));
+
+document.getElementById('btnExport').textContent = 'Полный бэкап';
+document.getElementById('btnExport').addEventListener('click',exportJSON);
+document.getElementById('btnImport').addEventListener('click',()=>jsonInput.click());
+document.getElementById('jsonInput').addEventListener('change',e=>{if(e.target.files[0])importJSON(e.target.files[0]);e.target.value='';});
+document.getElementById('btnClear').addEventListener('click',()=>{if(confirm('Удалить все данные?')){localStorage.removeItem(LS_KEY);store=[];renderArchive();buildHistory();reRenderCoefs();drawCoefChart();document.getElementById('currentCard').classList.add('hidden');}});
+
+// Добавляем кнопку экспорта только основных данных для совместимости
+const btnExportLegacy = document.createElement('button');
+btnExportLegacy.id = 'btnExportLegacy';
+btnExportLegacy.className = 'small';
+btnExportLegacy.textContent = 'Экспорт (только 1С)';
+btnExportLegacy.style.marginLeft = '1px';
+btnExportLegacy.style.marginRight = '5px';
+btnExportLegacy.onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(store, null, 2)], {type: 'application/json'}));
+  a.download = 'imports_only_backup.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+document.getElementById('btnExport').parentElement.insertBefore(btnExportLegacy, document.getElementById('btnImport'));
+
+/* ════════════════════════════════════════════════════════ ROUTER ═════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════ РИСКИ ══════════════════════════════════════════════════════════ */
+const RISK_SETTINGS_LS = 'riskSettingsV1';
+const RISK_META = {
+  neg:     { label: 'Отрицат. остаток', cls: 'risk-neg' },
+  overrun: { label: 'Перерасход СС',    cls: 'risk-overrun' },
+  stale:   { label: 'Застой оплат',     cls: 'risk-stale' },
+  nocost:  { label: 'Нет плановой СС',  cls: 'risk-nocost' }
+};
+let riskFilter = null; // null = все категории, иначе код категории
+
+function loadRiskSettings(){
+  try { return Object.assign({overrunPct: 10, staleDays: 30}, JSON.parse(localStorage.getItem(RISK_SETTINGS_LS) || '{}')); }
+  catch(e){ return {overrunPct: 10, staleDays: 30}; }
+}
+function saveRiskSettings(){
+  localStorage.setItem(RISK_SETTINGS_LS, JSON.stringify({
+    overrunPct: Number(document.getElementById('riskOverrunPct').value) || 10,
+    staleDays:  Number(document.getElementById('riskStaleDays').value)  || 30
+  }));
+}
+
+function computeRisks(){
+  const empty = {rows: [], counts: {neg:0, overrun:0, stale:0, nocost:0}, date: null};
+  if (!store.length) return empty;
+
+  const overrunPct = Number(document.getElementById('riskOverrunPct').value) || 10;
+  const staleDays  = Number(document.getElementById('riskStaleDays').value)  || 30;
+  const last = store[store.length - 1];
+  const lastDate = new Date(last.date);
+
+  // Индекс истории оплат: номер → [{date, oplat}] — один проход по всем импортам
+  const payHist = new Map();
+  store.forEach(imp => imp.data.forEach(r => {
+    if (!payHist.has(r.Номер)) payHist.set(r.Номер, []);
+    payHist.get(r.Номер).push({ date: imp.date, oplat: toNum(r.СуммаОплат) });
+  }));
+
+  const rows = [];
+  const counts = {neg:0, overrun:0, stale:0, nocost:0};
+
+  last.data.forEach(r => {
+    const risks = [];
+    const ostatok = toNum(r.ОстатокОплат);
+    const plan = toNum(r.ССПлан) || toNum(r.ССПред);
+    const fact = toNum(r.ССФакт);
+    const oplat = toNum(r.СуммаОплат);
+
+    // 1. Отрицательный остаток оплат
+    if (ostatok < 0){
+      risks.push({ code:'neg', text:`Остаток ${sep(ostatok)}` });
+      counts.neg++;
+    }
+    // 2. Перерасход себестоимости сверх порога
+    if (plan > 0 && fact > plan * (1 + overrunPct / 100)){
+      const pct = ((fact / plan - 1) * 100).toFixed(1);
+      risks.push({ code:'overrun', text:`СС +${pct}% (${sep(fact)} / ${sep(plan)})` });
+      counts.overrun++;
+    }
+    // 3. Застой оплат: остаток > 0, а СуммаОплат не менялась дольше N дней
+    if (ostatok > 0){
+      const hist = payHist.get(r.Номер) || [];
+      let changeDate = hist.length ? hist[0].date : last.date;
+      for (let i = hist.length - 1; i >= 0; i--){
+        if (hist[i].oplat !== oplat){
+          changeDate = hist[Math.min(i + 1, hist.length - 1)].date;
+          break;
+        }
+        changeDate = hist[i].date; // все равны текущему → дата первого появления
+      }
+      const days = Math.round((lastDate - new Date(changeDate)) / 86400000);
+      if (days >= staleDays){
+        risks.push({ code:'stale', text:`Без оплат ${days} дн., остаток ${sep(ostatok)}` });
+        counts.stale++;
+      }
+    }
+    // 4. Нет плановой себестоимости
+    if (plan === 0){
+      risks.push({ code:'nocost', text:'ССПлан и ССПред пусты' });
+      counts.nocost++;
+    }
+
+    if (risks.length){
+      rows.push({ num: r.Номер, risks, zakaz: toNum(r.СуммаЗаказа), oplat, ostatok, plan, fact });
+    }
+  });
+
+  // Сортировка: больше рисков → выше; при равенстве — по модулю остатка
+  rows.sort((a, b) => b.risks.length - a.risks.length || Math.abs(b.ostatok) - Math.abs(a.ostatok));
+  return { rows, counts, date: last.date };
+}
+
+function renderRisks(){
+  const wrap  = document.getElementById('riskTableWrap');
+  const chips = document.getElementById('riskChips');
+  wrap.innerHTML = '';
+  chips.innerHTML = '';
+
+  if (!store.length){
+    wrap.innerHTML = emptyState('Нет импортов — загрузите CSV на главной');
+    return;
+  }
+
+  const { rows, counts, date } = computeRisks();
+
+  // Счётчики-фильтры
+  const totalChip = document.createElement('span');
+  totalChip.className = 'risk-chip' + (riskFilter === null ? ' active' : '');
+  totalChip.innerHTML = `Все <span class="cnt">${rows.length}</span>`;
+  totalChip.onclick = () => { riskFilter = null; renderRisks(); };
+  chips.appendChild(totalChip);
+
+  Object.entries(RISK_META).forEach(([code, meta]) => {
+    const chip = document.createElement('span');
+    chip.className = 'risk-chip' + (riskFilter === code ? ' active' : '');
+    chip.innerHTML = `<span class="risk-badge ${meta.cls}">${meta.label}</span> <span class="cnt">${counts[code]}</span>`;
+    chip.onclick = () => { riskFilter = (riskFilter === code) ? null : code; renderRisks(); };
+    chips.appendChild(chip);
+  });
+
+  const data = riskFilter ? rows.filter(r => r.risks.some(x => x.code === riskFilter)) : rows;
+
+  if (!data.length){
+    wrap.innerHTML = emptyState(riskFilter ? 'В этой категории рисков нет' : `Рисков не обнаружено (импорт от ${fmtDate(date)}) 🎉`);
+    return;
+  }
+
+  const tbl = document.createElement('table');
+  const trh = document.createElement('tr');
+  ['Номер', 'Риски', 'СуммаЗаказа', 'СуммаОплат', 'Остаток', 'ССПлан/Пред', 'ССФакт'].forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    trh.appendChild(th);
+  });
+  tbl.appendChild(trh);
+
+  data.forEach(r => {
+    const tr = document.createElement('tr');
+
+    const tdNum = document.createElement('td');
+    const info = getContractInfo(r.num);
+    tdNum.textContent = info.exists && info.name ? `${r.num} • ${info.name}` : r.num;
+    if (info.exists) tdNum.title = `${info.name}\n${info.comment || ''}`;
+    tr.appendChild(tdNum);
+
+    const tdRisks = document.createElement('td');
+    r.risks.forEach(x => {
+      const b = document.createElement('span');
+      b.className = `risk-badge ${RISK_META[x.code].cls}`;
+      b.textContent = RISK_META[x.code].label;
+      b.title = x.text;
+      tdRisks.appendChild(b);
+    });
+    tr.appendChild(tdRisks);
+
+    [r.zakaz, r.oplat, r.ostatok, r.plan, r.fact].forEach((v, i) => {
+      const td = document.createElement('td');
+      td.textContent = sep(v);
+      td.style.textAlign = 'right';
+      if (i === 2 && v < 0) td.style.color = '#c62828';
+      tr.appendChild(td);
+    });
+
+    tbl.appendChild(tr);
+  });
+
+  const hint = document.createElement('p');
+  hint.className = 'hint';
+  hint.textContent = `По импорту от ${fmtDate(date)}. Наведите на бейдж — детали риска.`;
+  wrap.append(hint, tbl);
+}
+
+function exportRisksCsv(){
+  if (!store.length){ showToast('Нет данных для экспорта', 'warning'); return; }
+  const { rows, date } = computeRisks();
+  const data = riskFilter ? rows.filter(r => r.risks.some(x => x.code === riskFilter)) : rows;
+  if (!data.length){ showToast('Нет рисков для экспорта', 'warning'); return; }
+  const lines = ['\uFEFFНомер;Наименование;Риски;СуммаЗаказа;СуммаОплат;Остаток;ССПлан;ССФакт'];
+  data.forEach(r => {
+    const info = getContractInfo(r.num);
+    const name = (info.exists && info.name) ? info.name.replace(/;/g, ',') : '';
+    const riskTxt = r.risks.map(x => x.text.replace(/;/g, ',')).join(' | ');
+    lines.push([r.num, name, riskTxt, r.zakaz, r.oplat, r.ostatok, r.plan, r.fact].join(';'));
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = `risks_${date}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Инициализация настроек и обработчиков вкладки
+(() => {
+  const s = loadRiskSettings();
+  const inpPct  = document.getElementById('riskOverrunPct');
+  const inpDays = document.getElementById('riskStaleDays');
+  inpPct.value  = s.overrunPct;
+  inpDays.value = s.staleDays;
+  [inpPct, inpDays].forEach(inp => inp.addEventListener('change', () => { saveRiskSettings(); renderRisks(); }));
+  document.getElementById('btnRisksRefresh').addEventListener('click', renderRisks);
+  document.getElementById('btnRisksCsv').addEventListener('click', exportRisksCsv);
+  document.getElementById('linkRisks').addEventListener('click', e => { e.preventDefault(); showRisks(); });
+  if (location.hash === '#risks') renderRisks(); // если открыли сразу вкладку — перерисовать с сохранёнными настройками
+})();
+
+
+/* ════════════════════════════════════════════════════════ ИИ-АНАЛИЗ ══════════════════════════════════════════════════════ */
+const AI_CFG_LS     = 'aiConfigV1';
+const AI_PROMPTS_LS = 'aiPromptsV1';
+
+const AI_DEFAULT_PROMPTS = {
+  audit: `Ты — финансовый аудитор мебельного производства «Массивбург». Тебе передают выгрузку договоров из 1С: суммы заказов, оплаты, остатки, себестоимость (предварительная, плановая, фактическая), а также сводку автоматически найденных рисков.
+
+Твоя задача:
+1. Оценить общее состояние портфеля договоров (2–3 предложения с цифрами).
+2. Выделить 5–7 договоров, требующих внимания в первую очередь, с конкретной причиной по каждому.
+3. Указать, что именно проверить в 1С или уточнить у менеджеров.
+4. Отметить аномалии, которые автоматические проверки могли пропустить.
+
+Пиши по-русски, кратко и структурированно. Суммы округляй до тысяч рублей. Опирайся только на переданные данные, ничего не выдумывай.`,
+
+  dyn: `Ты — бизнес-аналитик мебельного производства «Массивбург». Тебе передают динамику портфеля договоров за период: по каждой выгрузке — итоговые суммы заказов, оплат, остатков, средние коэффициенты и количество изменений, плюс договоры с наибольшими изменениями за период.
+
+Твоя задача:
+1. Описать тренд: растёт или сжимается портфель, ускоряются или замедляются оплаты.
+2. Оценить динамику средних коэффициентов (маржинальности) и что она означает для бизнеса.
+3. Назвать договоры-локомотивы и договоры-тормоза периода.
+4. Дать 2–3 практических вывода для руководителя производства.
+
+Пиши по-русски, кратко, с цифрами. Если выгрузок в периоде мало для надёжных выводов — честно скажи об этом.`,
+
+  core: `Ты — придирчивый технический ревизор. Тебе передают: (а) методику расчётов приложения «Сверка данных 1С» с формулами в том виде, как они написаны в коде, и (б) результаты автоматических проверок целостности данных последней выгрузки.
+
+Твоя задача:
+1. Оценить корректность формул: математические и логические ошибки, странные константы, несогласованность обозначений.
+2. Проинтерпретировать результаты проверок целостности: что означают найденные расхождения и критичны ли они.
+3. Указать слабые места методики: при каких данных расчёты будут врать.
+4. Предложить конкретные улучшения (новые проверки, исправления формул).
+
+Пиши по-русски. Будь строг, но конструктивен. Если формула выглядит подозрительно — скажи прямо, не смягчай.`
+};
+
+function aiLoadCfg(){
+  try { return Object.assign({key:'', model:'claude-sonnet-4-6'}, JSON.parse(localStorage.getItem(AI_CFG_LS)||'{}')); }
+  catch(e){ return {key:'', model:'claude-sonnet-4-6'}; }
+}
+function aiSaveCfg(){
+  localStorage.setItem(AI_CFG_LS, JSON.stringify({
+    key: document.getElementById('aiKey').value.trim(),
+    model: document.getElementById('aiModel').value
+  }));
+}
+function aiLoadPrompts(){
+  try { return Object.assign({}, AI_DEFAULT_PROMPTS, JSON.parse(localStorage.getItem(AI_PROMPTS_LS)||'{}')); }
+  catch(e){ return {...AI_DEFAULT_PROMPTS}; }
+}
+function aiSavePrompt(id, text){
+  const saved = aiLoadPrompts();
+  saved[id] = text;
+  // храним только отличающиеся от дефолта
+  const diff = {};
+  Object.keys(saved).forEach(k => { if (saved[k] !== AI_DEFAULT_PROMPTS[k]) diff[k] = saved[k]; });
+  localStorage.setItem(AI_PROMPTS_LS, JSON.stringify(diff));
+}
+
+/* ---------- подготовка данных ---------- */
+function aiRowLine(r){
+  return [r.Номер, toNum(r.СуммаЗаказа), toNum(r.СуммаОплат), toNum(r.ОстатокОплат),
+          toNum(r.ССПред), toNum(r.ССПлан), toNum(r.ССФакт), toNum(r.Дизайнер), toNum(r.Безнал)].join(';');
+}
+
+function aiBuildAuditPayload(){
+  const last = store[store.length - 1];
+  const MAX_ROWS = 400;
+  const rows = last.data.slice(0, MAX_ROWS).map(aiRowLine).join('\n');
+  const truncated = last.data.length > MAX_ROWS ? `\n…показаны первые ${MAX_ROWS} из ${last.data.length} строк.` : '';
+
+  const { rows: riskRows, counts } = computeRisks();
+  const riskTop = riskRows.slice(0, 15).map(r =>
+    `${r.num}: ${r.risks.map(x => x.text).join(' | ')}`).join('\n') || '—';
+
+  return `ВЫГРУЗКА ДОГОВОРОВ ОТ ${fmtDate(last.date)} (kз=${last.coef})
+Всего договоров: ${last.data.length}
+
+Формат строк: Номер;СуммаЗаказа;СуммаОплат;ОстатокОплат;ССПред;ССПлан;ССФакт;Дизайнер;Безнал
+${rows}${truncated}
+
+АВТОМАТИЧЕСКИ НАЙДЕННЫЕ РИСКИ
+Отрицательный остаток: ${counts.neg} | Перерасход СС: ${counts.overrun} | Застой оплат: ${counts.stale} | Нет плановой СС: ${counts.nocost}
+Топ проблемных договоров:
+${riskTop}`;
+}
+
+function aiBuildDynamicsPayload(days){
+  const last = store[store.length - 1];
+  const from = new Date(last.date); from.setDate(from.getDate() - days);
+  const imps = store.filter(imp => new Date(imp.date) >= from);
+  if (imps.length < 2) return null;
+
+  const agg = imps.map(imp => {
+    const t = imp.data.reduce((a, r) => {
+      a.zakaz += toNum(r.СуммаЗаказа); a.oplat += toNum(r.СуммаОплат); a.ost += toNum(r.ОстатокОплат);
+      return a;
+    }, {zakaz:0, oplat:0, ost:0});
+    const cd = calculateCoefficients(imp.data);
+    const m = imp.meta || {};
+    return `${fmtDate(imp.date)}: договоров ${imp.data.length}, заказы ${sep(Math.round(t.zakaz))}, оплаты ${sep(Math.round(t.oplat))}, остаток ${sep(Math.round(t.ost))}, ср.коэф.предв ${(avgOf(cd,'coefPred',r=>r.coefPred>0)||0).toFixed(2)}, ср.коэф.план ${(avgOf(cd,'coefPlan',r=>r.coefPlan>0)||0).toFixed(2)}, изменения: +${m.newCount??'?'} нов, −${m.delCount??'?'} удал, ✎${m.modCount??'?'} правок`;
+  }).join('\n');
+
+  // топ изменений: сравнение первого и последнего импорта периода
+  const firstMap = new Map(imps[0].data.map(r => [r.Номер, r]));
+  const lastMap  = new Map(last.data.map(r => [r.Номер, r]));
+  const movers = [];
+  lastMap.forEach((r, num) => {
+    const p = firstMap.get(num);
+    if (p){
+      const d = toNum(r.СуммаОплат) - toNum(p.СуммаОплат);
+      if (d !== 0) movers.push({num, d});
+    }
+  });
+  movers.sort((a,b) => Math.abs(b.d) - Math.abs(a.d));
+  const topMovers = movers.slice(0, 15).map(m => `${m.num}: оплаты ${m.d>0?'+':''}${sep(m.d)}`).join('\n') || '—';
+  const newNums = [...lastMap.keys()].filter(n => !firstMap.has(n));
+  const delNums = [...firstMap.keys()].filter(n => !lastMap.has(n));
+
+  return `ДИНАМИКА ПОРТФЕЛЯ ЗА ПЕРИОД ${fmtDate(imps[0].date)} — ${fmtDate(last.date)} (${imps.length} выгрузок)
+
+ПО ВЫГРУЗКАМ:
+${agg}
+
+ТОП ИЗМЕНЕНИЙ ОПЛАТ ЗА ПЕРИОД:
+${topMovers}
+
+Новых договоров за период: ${newNums.length}${newNums.length ? ' (' + newNums.slice(0,10).join(', ') + (newNums.length>10?'…':'') + ')' : ''}
+Завершено/удалено: ${delNums.length}${delNums.length ? ' (' + delNums.slice(0,10).join(', ') + (delNums.length>10?'…':'') + ')' : ''}`;
+}
+
+function aiBuildSelfCheckPayload(){
+  const last = store[store.length - 1];
+  // проверки целостности
+  const bad = [], negs = {}, dups = new Map(), empties = [];
+  last.data.forEach(r => {
+    const diff = toNum(r.СуммаЗаказа) - toNum(r.СуммаОплат) - toNum(r.ОстатокОплат);
+    if (Math.abs(diff) > 1) bad.push(`${r.Номер}: Заказ−Оплаты−Остаток = ${sep(Math.round(diff))}`);
+    ['СуммаЗаказа','СуммаОплат','ССПред','ССПлан','ССФакт'].forEach(k => {
+      if (toNum(r[k]) < 0) negs[k] = (negs[k]||0) + 1;
+    });
+    dups.set(r.Номер, (dups.get(r.Номер)||0) + 1);
+    if (!String(r.Номер).trim()) empties.push(r);
+  });
+  const dupList = [...dups.entries()].filter(([,c]) => c > 1).map(([n,c]) => `${n} ×${c}`);
+  const lsBytes = new Blob([localStorage.getItem(LS_KEY)||'']).size;
+
+  return `МЕТОДИКА РАСЧЁТОВ (формулы дословно из кода приложения):
+
+1. Парсинг CSV: split(';'), числа через toNum (замена запятой на точку, пробелы удаляются). Колонки: Номер;СуммаЗаказа;СуммаОплат;ОстатокОплат;ССПред;ССПлан;ССФакт;Дизайнер;Безнал. Поле «Дизайнер» парсится как число.
+2. Коэффициенты (модуль calculateCoefficients):
+   netSum = СуммаЗаказа − Дизайнер − Безнал
+   coefPred = ССПред > 0 ? netSum / ССПред : 0
+   coefPlan = ССПлан > 0 ? netSum / ССПлан : 0
+   себестоимость = ССФакт || ССПлан || ССПред || 0
+   margin = СуммаЗаказа > 6 ? ((netSum − себестоимость) / СуммаЗаказа * 100) : 0
+   coefFinal = (ССПлан > 0 && себестоимость > 0) ? netSum / себестоимость : NaN
+   overrun = ССПлан > 0 ? (ССПлан − себестоимость) : NaN
+3. Средние коэффициенты: avgOf — среднее по строкам, где коэффициент > 0 (нули исключаются).
+4. Сравнение импортов (buildDiff): построчно по полю Номер; новые/удалённые/изменённые; kз задаётся вручную при импорте.
+5. Риски: отрицательный ОстатокОплат; ССФакт > план×(1+порог%); СуммаОплат не менялась N дней при остатке > 0; ССПлан и ССПред оба нулевые.
+
+РЕЗУЛЬТАТЫ АВТОПРОВЕРОК ЦЕЛОСТНОСТИ (выгрузка от ${fmtDate(last.date)}, ${last.data.length} строк):
+• Нарушение баланса |Заказ − Оплаты − Остаток| > 1 руб: ${bad.length} строк${bad.length ? '\n  ' + bad.slice(0,10).join('\n  ') + (bad.length>10 ? `\n  …и ещё ${bad.length-10}` : '') : ''}
+• Отрицательные значения: ${Object.keys(negs).length ? Object.entries(negs).map(([k,v])=>`${k}: ${v}`).join(', ') : 'нет'}
+• Дубли номеров договоров: ${dupList.length ? dupList.join(', ') : 'нет'}
+• Пустые номера: ${empties.length}
+• Импортов в хранилище: ${store.length} (${fmtDate(store[0].date)} — ${fmtDate(last.date)}), объём localStorage: ${(lsBytes/1024).toFixed(0)} КБ из ~5120 КБ лимита`;
+}
+
+/* ---------- вызов API и вывод ---------- */
+function aiRenderResult(el, text){
+  // безопасный мини-рендер: экранируем, затем **жирный**, заголовки и маркеры
+  let h = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  h = h.replace(/^#{1,3} (.*)$/gm, '<b style="font-size:15px">$1</b>');
+  h = h.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  h = h.replace(/^[-*] /gm, '• ');
+  el.innerHTML = h;
+  el.classList.add('show');
+}
+
+async function aiRun(personaId){
+  const cfg = aiLoadCfg();
+  const btn  = document.querySelector(`[data-run="${personaId}"]`);
+  const res  = document.querySelector(`[data-res="${personaId}"]`);
+  const meta = document.querySelector(`[data-meta="${personaId}"]`);
+
+  if (!cfg.key){ showToast('Введите API-ключ в настройках выше', 'warning'); return; }
+  if (!store.length){ showToast('Нет импортов — сначала загрузите CSV на главной', 'warning'); return; }
+
+  let payload;
+  if (personaId === 'audit') payload = aiBuildAuditPayload();
+  else if (personaId === 'core') payload = aiBuildSelfCheckPayload();
+  else {
+    const days = Number(document.querySelector('#aiPeriod button.active').dataset.days);
+    payload = aiBuildDynamicsPayload(days);
+    if (!payload){ showToast('В выбранном периоде меньше двух выгрузок — динамику не построить', 'warning'); return; }
+  }
+
+  const systemPrompt = document.querySelector(`[data-pt="${personaId}"]`).value;
+  btn.disabled = true;
+  const btnText = btn.textContent;
+  btn.innerHTML = '<span class="ai-spinner"></span>Думает…';
+  res.classList.remove('show');
+  meta.textContent = '';
+  const t0 = Date.now();
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': cfg.key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        max_tokens: 3000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: payload }]
+      })
+    });
+    const data = await resp.json();
+    if (!resp.ok){
+      const msg = data?.error?.message || `HTTP ${resp.status}`;
+      if (resp.status === 401) throw new Error('Ключ не принят (401). Проверьте API-ключ.');
+      if (resp.status === 429) throw new Error('Превышен лимит запросов (429). Подождите минуту.');
+      throw new Error(msg);
+    }
+    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n') || '(пустой ответ)';
+    aiRenderResult(res, text);
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    const usage = data.usage ? ` • токены: ${data.usage.input_tokens}→${data.usage.output_tokens}` : '';
+    meta.textContent = `${cfg.model} • ${secs} с${usage} • ${new Date().toLocaleString('ru-RU')}`;
+  } catch(err) {
+    res.textContent = '⛔ ' + (err.message === 'Failed to fetch'
+      ? 'Сеть/CORS: запрос не дошёл до api.anthropic.com. Проверьте интернет и блокировщики.'
+      : err.message);
+    res.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = btnText;
+  }
+}
+
+/* ---------- инициализация вкладки ИИ ---------- */
+(() => {
+  const cfg = aiLoadCfg();
+  const keyInp = document.getElementById('aiKey');
+  const modelSel = document.getElementById('aiModel');
+  keyInp.value = cfg.key;
+  modelSel.value = cfg.model;
+  keyInp.addEventListener('change', aiSaveCfg);
+  modelSel.addEventListener('change', aiSaveCfg);
+  document.getElementById('aiKeyToggle').addEventListener('click', () => {
+    keyInp.type = keyInp.type === 'password' ? 'text' : 'password';
+  });
+
+  const prompts = aiLoadPrompts();
+  ['audit','dyn','core'].forEach(id => {
+    const ta = document.querySelector(`[data-pt="${id}"]`);
+    ta.value = prompts[id];
+    ta.addEventListener('change', () => aiSavePrompt(id, ta.value));
+    document.querySelector(`[data-p="${id}"]`).addEventListener('click', e => {
+      const w = document.querySelector(`[data-pw="${id}"]`);
+      w.classList.toggle('open');
+      e.target.textContent = w.classList.contains('open') ? 'промт ▾' : 'промт ▸';
+    });
+    document.querySelector(`[data-preset="${id}"]`).addEventListener('click', () => {
+      if (confirm('Вернуть промт по умолчанию?')){ ta.value = AI_DEFAULT_PROMPTS[id]; aiSavePrompt(id, ta.value); }
+    });
+    document.querySelector(`[data-run="${id}"]`).addEventListener('click', () => aiRun(id));
+  });
+
+  document.querySelectorAll('#aiPeriod button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#aiPeriod button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    });
+  });
+
+  document.getElementById('linkAi').addEventListener('click', e => { e.preventDefault(); showAi(); });
+})();
+
+/* ════════════════════════════════════════════════════════ СПАРКЛАЙНЫ ═════════════════════════════════════════════════════ */
+function drawSparkline(canvas, points){
+  const w = 110, h = 26;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d');
+  if (!points.length) return;
+  const vals = points.map(p => p.oplat);
+  const flat0 = Math.max(...vals) === Math.min(...vals);
+  canvas.title = `Оплаты за ${points.length} выгрузок: ${sep(vals[0])} → ${sep(vals[vals.length - 1])}` +
+    (flat0 ? ' (без изменений)' : ` (${vals[vals.length-1] >= vals[0] ? '+' : ''}${sep(vals[vals.length-1] - vals[0])})`);
+  if (!ctx) return;
+  ctx.scale(dpr, dpr);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const span = max - min || 1;
+  const px = i => 3 + (w - 8) * (points.length === 1 ? 0.5 : i / (points.length - 1));
+  const py = v => h - 4 - (h - 8) * ((v - min) / span);
+
+  const flat = max === min;
+  ctx.strokeStyle = flat ? '#bbb' : '#1565c0';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  points.forEach((p, i) => i ? ctx.lineTo(px(i), py(p.oplat)) : ctx.moveTo(px(i), py(p.oplat)));
+  ctx.stroke();
+
+  ctx.fillStyle = flat ? '#bbb' : '#1565c0';
+  ctx.beginPath();
+  ctx.arc(px(points.length - 1), py(vals[vals.length - 1]), 2.2, 0, 7);
+  ctx.fill();
+}
+
+/* ════════════════════════════════════════════════════════ DRAG-N-DROP ════════════════════════════════════════════════════ */
+function dateFromFilename(name){
+  // 2026-07-06 / 2026.07.06 / 2026_07_06
+  let m = name.match(/(20\d{2})[-_.](\d{1,2})[-_.](\d{1,2})/);
+  if (m && +m[2] <= 12 && +m[3] <= 31) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  // 06.07.2026 / 06-07-2026 / 06_07_2026
+  m = name.match(/(\d{1,2})[-_.](\d{1,2})[-_.](20\d{2})/);
+  if (m && +m[2] <= 12 && +m[1] <= 31) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  // 20260706
+  m = name.match(/(20\d{2})(\d{2})(\d{2})/);
+  if (m && +m[2] <= 12 && +m[3] <= 31) return `${m[1]}-${m[2]}-${m[3]}`;
+  return null;
+}
+// существует ли дата на самом деле (отсекает 31.02 и т.п.)
+function isRealDate(iso){
+  if (!iso) return false;
+  const d = new Date(iso + 'T00:00:00');
+  return !isNaN(d) && d.toISOString().slice(0, 10) === iso;
+}
+
+(() => {
+  const overlay = document.getElementById('dropOverlay');
+  let depth = 0;
+
+  const hasFiles = e => e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files');
+
+  document.addEventListener('dragenter', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    if (++depth === 1) overlay.classList.add('on');
+  });
+  document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+  document.addEventListener('dragleave', e => {
+    if (!hasFiles(e)) return;
+    if (--depth <= 0){ depth = 0; overlay.classList.remove('on'); }
+  });
+  document.addEventListener('drop', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth = 0; overlay.classList.remove('on');
+
+    const file = [...e.dataTransfer.files].find(f => /\.csv$/i.test(f.name));
+    if (!file){ showToast('Нужен файл .csv', 'warning'); return; }
+
+    // кладём файл в input главной загрузки
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    const inp = document.getElementById('file');
+    inp.files = dt.files;
+
+    // автодата: из имени файла, иначе сегодня
+    const dInp = document.getElementById('impDate');
+    let fromName = dateFromFilename(file.name);
+    if (fromName && !isRealDate(fromName)) fromName = null;
+    dInp.value = fromName || new Date().toISOString().slice(0, 10);
+
+    checkLoadReady();
+    showMain();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast(`Файл «${file.name}» готов, дата: ${fmtDate(dInp.value)}${fromName ? ' (из имени файла)' : ' (сегодня)'}. Проверьте kз и жмите «Загрузить»`, 'success');
+  });
+})();
+
+/* ======== ROUTER (#main / #history / #pf / #coefficients) ======== */
+
+// Все панели-секции (не .card главного экрана)
+const PANEL_IDS = ['historyView', 'pfView', 'coefView', 'directoryView', 'dashboardView', 'risksView', 'aiView'];
+
+// Управляет ТОЛЬКО видимостью. Вся логика инициализации — в show*() функциях.
+function showView(name) {
+  const isMain = name === 'main';
+  document.querySelectorAll('body > .card').forEach(e => e.style.display = isMain ? '' : 'none');
+  PANEL_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  if (!isMain) {
+    const panel = document.getElementById(name + 'View');
+    if (panel) {
+      panel.style.display = (name === 'history') ? 'flex' : 'block';
+      panel.querySelectorAll('.card').forEach(e => e.style.display = '');
+    }
+  }
+}
+
+function showMain()      { showView('main'); location.hash = ''; }
+function showHistory()   { showView('history'); }
+function showPf()        { showView('pf'); }
+function showCoef()      { showView('coef'); renderCoefImportsArchive(); drawCoefChart(); }
+function showDirectory() { showView('directory'); renderDirectoryTable(); showMismatchesReport(); }
+function showDashboard() { showView('dashboard'); renderDashboard(); }
+function showRisks()     { showView('risks'); renderRisks(); }
+function showAi()        { showView('ai'); }
+
+linkMain.addEventListener('click',e=>{e.preventDefault();showMain();});
+btnBack.addEventListener('click',showMain);
+linkPf.addEventListener('click', e=>{ e.preventDefault(); showPf(); });
+linkCoef.addEventListener('click', e=>{ e.preventDefault(); showCoef(); });
+document.getElementById('linkDir').addEventListener('click', e => {
+  e.preventDefault();
+  showDirectory();
+});
+linkHist.addEventListener('click',e=>{e.preventDefault();showHistory();renderNumList();});
+
+window.addEventListener('keydown',e=>{if(e.key==='Escape'&&(historyView.style.display==='flex'||pfView.style.display==='block'||coefView.style.display==='block'))showMain();});
+
+/* ==== История: навигация ↑/↓ по списку договоров ==== */
+
+function setActiveContractByIndex(i) {
+  const items = Array.from(nums.querySelectorAll('li')).filter(li => li.style.display !== 'none');
+  if (!items.length) return;
+  if (i < 0) i = 0;
+  if (i >= items.length) i = items.length - 1;
+  items.forEach(li => li.classList.remove('active'));
+  const li = items[i];
+  li.classList.add('active');
+  histActiveIndex = i;
+  renderContract(li.textContent);      // показать историю выбранного договора
+  li.scrollIntoView({ block: 'nearest' });
+}
+
+window.addEventListener('keydown', (e) => {
+  // Работает только когда открыта вкладка История
+  if (historyView.style.display !== 'flex') return;
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  e.preventDefault();
+  const delta = (e.key === 'ArrowDown') ? 1 : -1;
+  setActiveContractByIndex((histActiveIndex ?? 0) + delta);
+});
+
+window.addEventListener('hashchange', () => {
+  if (location.hash === '#history') {
+    showHistory();
+    renderNumList();
+  } else if (location.hash === '#pf') {
+    showPf();
+  } else if (location.hash === '#coefficients') {
+    showCoef();
+  } else if (location.hash === '#directory') {
+    showDirectory();
+  } else if (location.hash === '#dashboard') {
+    showDashboard();
+  } else if (location.hash === '#risks') {
+    showRisks();
+  } else if (location.hash === '#ai') {
+    showAi();
+  } else {
+    showMain();
+  }
+});
+
+// Добавьте также инициализацию при загрузке
+if (location.hash === '#history') {
+  showHistory();
+  renderNumList();
+} else if (location.hash === '#pf') {
+  showPf();
+} else if (location.hash === '#coefficients') {
+  showCoef();
+} else if (location.hash === '#directory') {
+  showDirectory();
+} else if (location.hash === '#dashboard') {
+  showDashboard();
+} else if (location.hash === '#risks') {
+  showRisks();
+} else if (location.hash === '#ai') {
+  showAi();
+}
+if(location.hash==='#history'){showHistory();renderNumList();}
+else if(location.hash==='#pf')showPf();
+else if(location.hash==='#coefficients')showCoef();
+
+/* ---------- ФУНКЦИИ СПРАВОЧНИКА ДОГОВОРОВ ---------- */
+function renderDirectoryTable() {
+  const tbody = document.getElementById('directoryTableBody');
+  const searchQuery = document.getElementById('dirSearch').value.toLowerCase();
+  
+  tbody.innerHTML = '';
+  
+  let count = 0;
+  let withNames = 0;
+  
+  Object.entries(contractsDirectory).forEach(([id, info]) => {
+    // Фильтрация по поиску
+    const searchStr = `${id} ${info.name} ${info.comment}`.toLowerCase();
+    if (searchQuery && !searchStr.includes(searchQuery)) return;
+    
+    count++;
+    if (info.name) withNames++;
+    
+    const tr = document.createElement('tr');
+    
+    // ID
+    const tdId = document.createElement('td');
+    tdId.textContent = id;
+    tdId.contentEditable = false; // ID не редактируем
+    tr.appendChild(tdId);
+    
+    // Наименование
+    const tdName = document.createElement('td');
+    tdName.textContent = info.name || '';
+    tdName.contentEditable = true;
+    tdName.addEventListener('input', () => {
+      contractsDirectory[id].name = tdName.textContent.trim();
+      saveContractsDirectory();
+    });
+    tr.appendChild(tdName);
+    
+    // Примечание
+    const tdComment = document.createElement('td');
+    tdComment.textContent = info.comment || '';
+    tdComment.contentEditable = true;
+    tdComment.addEventListener('input', () => {
+      contractsDirectory[id].comment = tdComment.textContent.trim();
+      saveContractsDirectory();
+    });
+    tr.appendChild(tdComment);
+    
+    // Удаление
+    const tdDel = document.createElement('td');
+    const btnDel = document.createElement('button');
+    btnDel.textContent = '✖';
+    btnDel.className = 'small danger';
+    btnDel.onclick = () => {
+      if (confirm(`Удалить договор ${id} из справочника?`)) {
+        delete contractsDirectory[id];
+        saveContractsDirectory();
+        renderDirectoryTable();
+      }
+    };
+    tdDel.appendChild(btnDel);
+    tr.appendChild(tdDel);
+    
+    tbody.appendChild(tr);
+  });
+  
+  // Статистика
+  document.getElementById('dirStats').innerHTML = `
+    Всего договоров: <strong>${count}</strong><br>
+    С наименованиями: <strong>${withNames}</strong><br>
+    Без наименований: <strong>${count - withNames}</strong>
+  `;
+}
+
+function addContractToDirectory() {
+  const id = document.getElementById('dirNewId').value.trim();
+  const name = document.getElementById('dirNewName').value.trim();
+  const comment = document.getElementById('dirNewComment').value.trim();
+  
+  if (!id) {
+    showToast('ID договора обязателен', 'warning');
+    return;
+  }
+  
+  if (contractsDirectory[id]) {
+    if (!confirm(`Договор ${id} уже существует. Перезаписать?`)) return;
+  }
+  
+  contractsDirectory[id] = { name, comment };
+  saveContractsDirectory();
+  
+  document.getElementById('dirNewId').value = '';
+  document.getElementById('dirNewName').value = '';
+  document.getElementById('dirNewComment').value = '';
+  
+  renderDirectoryTable();
+}
+
+function importDirectoryCSV() {
+  const input = document.getElementById('dirFileInput');
+  input.accept = '.csv';
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const count = importContractsDirectory(evt.target.result);
+      showToast('Импортировано договоров: ' + count, 'success');
+      renderDirectoryTable();
+      input.value = '';
+    };
+    reader.readAsText(file, 'utf-8');
+  };
+  input.click();
+}
+
+function exportDirectoryCSV() {
+  const lines = ['ID;Наименование;Примечание'];
+  
+  Object.entries(contractsDirectory).forEach(([id, info]) => {
+    lines.push(`${id};${info.name || ''};${info.comment || ''}`);
+  });
+  
+  const csv = '\uFEFF' + lines.join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'}));
+  a.download = `contracts_directory_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function exportDirectoryJSON() {
+  const json = JSON.stringify(contractsDirectory, null, 2);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([json], {type: 'application/json'}));
+  a.download = `contracts_directory_${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importDirectoryJSON() {
+  const input = document.getElementById('dirFileInput');
+  input.accept = '.json';
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const imported = JSON.parse(evt.target.result);
+        contractsDirectory = { ...contractsDirectory, ...imported };
+        saveContractsDirectory();
+        showToast('Импортировано договоров: ' + Object.keys(imported).length, 'success');
+        renderDirectoryTable();
+      } catch (err) {
+        showToast('Ошибка импорта JSON: ' + err.message, 'error');
+      }
+      input.value = '';
+    };
+    reader.readAsText(file, 'utf-8');
+  };
+  input.click();
+}
+
+function clearDirectory() {
+  if (confirm('Удалить все данные из справочника договоров?')) {
+    contractsDirectory = {};
+    saveContractsDirectory();
+    renderDirectoryTable();
+  }
+}
+
+function showMismatchesReport() {
+  if (importMismatches.length === 0) {
+    document.getElementById('mismatchesReport').style.display = 'none';
+    return;
+  }
+  
+  const list = document.getElementById('mismatchesList');
+  list.innerHTML = '';
+  
+  importMismatches.forEach(item => {
+    const div = document.createElement('div');
+    div.className = `mismatch-item mismatch-${item.status}`;
+    div.textContent = `${item.num}: ${item.message}`;
+    list.appendChild(div);
+  });
+  
+  document.getElementById('mismatchesReport').style.display = 'block';
+}
+
+// helper: получить значение СуммаОплат для договора в импорте по индексу
+function _getSummaOplatInImport(impIndex, num) {
+  if (!store[impIndex]) return undefined;
+  const r = store[impIndex].data.find(x => x.Номер === num);
+  return (r ? toNum(r.СуммаОплат) : undefined);
+}
+
+// возвращает дату (строку в формате ДД.ММ.ГГГГ) когда в последний раз изменилось значение СуммаОплат
+// алгоритм: берем текущее значение (в последнем импорте), идём назад по импорту пока значение == текущее,
+// при первом расхождении — возвращаем дату следующего импорта (тот, где значение стало текущим).
+function getLastPaymentChangeDate(num) {
+  if (!store || !store.length) return '';
+  const lastIdx = store.length - 1;
+  const curr = _getSummaOplatInImport(lastIdx, num);
+  if (typeof curr === 'undefined') return ''; // нет текущего значения
+
+  // пройдём назад и найдём индекс, где value !== curr
+  for (let i = lastIdx; i >= 0; i--) {
+    const val = _getSummaOplatInImport(i, num);
+    if (typeof val === 'undefined') continue; // пропускаем импорты, где ишаем договора нет
+    if (val !== curr) {
+      // последнее изменение произошло в следующем импорте (i+1), вернём дату этого импорта
+      const idx = Math.min(i + 1, lastIdx);
+      return fmtDate(store[idx].date);
+    }
+  }
+  // если все значения (от тех, где договор есть) равны текущему — считаем датой появления текущего значения самый старый импорт,
+  // либо дату первого импорта, где контракт встречается
+  for (let i = 0; i <= lastIdx; i++) {
+    const val = _getSummaOplatInImport(i, num);
+    if (typeof val !== 'undefined') return fmtDate(store[i].date);
+  }
+  return '';
+}
+
+// Рендер таблицы дашборда
+function renderDashboard() {
+  const wrap = document.getElementById('dashTableWrap');
+  wrap.innerHTML = '';
+
+  if (!store || !store.length) {
+    wrap.innerHTML = emptyState('Нет импортов');
+    return;
+  }
+
+  const lastImp = store[store.length - 1];
+  // исключаем "завершённые" записи (r.__status === 'deleted'), затем — остальные условия
+const rows = lastImp.data
+  .filter(r => r.__status !== 'deleted')           // <-- НЕ включаем завершённые/удалённые
+  .filter(r => toNum(r.ССФакт) <= 100000 && toNum(r.СуммаОплат) > 100000);
+
+
+  // Сортируем по сумме оплат по убыванию (по желанию)
+  rows.sort((a,b) => toNum(b.СуммаОплат) - toNum(a.СуммаОплат));
+
+  // Заголовок таблицы
+  const table = document.createElement('table');
+  const ths = ['Номер','Наименование','Прим.','СуммаЗаказа','СуммаОплат','Динамика','Дизайнер','Безнал','ССПред','ССПлан','ССФакт','Дата последней оплаты'];
+  const trh = document.createElement('tr');
+  ths.forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    if (h === 'Наименование') th.style.maxWidth = '300px';
+    trh.appendChild(th);
+  });
+  table.appendChild(trh);
+
+  // Итоги (Σ) — сверху, считаем также ССПред, ССПлан и ССФакт
+const total = rows.reduce((s, r) => {
+  s.sumOrder += toNum(r.СуммаЗаказа);
+  s.sumPaid  += toNum(r.СуммаОплат);
+  s.ssPred   += toNum(r.ССПред);
+  s.ssPlan   += toNum(r.ССПлан);
+  s.ssFact   += toNum(r.ССФакт);   // <-- добавлено
+  return s;
+}, { sumOrder: 0, sumPaid: 0, ssPred: 0, ssPlan: 0, ssFact: 0 });
+
+// Формируем строку итогов в том же порядке, что и заголовки ths:
+// ['Номер','Наименование','Прим.','СуммаЗаказа','СуммаОплат','Дизайнер','Безнал','ССПред','ССПлан','ССФакт','Дата последней оплаты']
+const trSum = document.createElement('tr');
+trSum.className = 'summary-row';
+const cells = [
+  'Σ',                      // Номер -> знак суммирования
+  '',                       // Наименование
+  '',                       // Прим.
+  sep(total.sumOrder),      // СуммаЗаказа
+  sep(total.sumPaid),       // СуммаОплат
+  '',                       // Динамика (пусто)
+  '',                       // Дизайнер (пусто)
+  '',                       // Безнал (пусто)
+  sep(total.ssPred),        // ССПред
+  sep(total.ssPlan),        // ССПлан
+  sep(total.ssFact),        // ССФакт  <-- НОВЫЙ Σ
+  ''                        // Дата последней оплаты
+];
+cells.forEach(txt => {
+  const td = document.createElement('td');
+  td.textContent = txt;
+  trSum.appendChild(td);
+});
+table.appendChild(trSum);
+
+
+
+
+  // Индекс истории оплат для спарклайнов — один проход по store
+  const sparkHist = new Map();
+  store.forEach(imp => imp.data.forEach(x => {
+    if (!sparkHist.has(x.Номер)) sparkHist.set(x.Номер, []);
+    sparkHist.get(x.Номер).push({ date: imp.date, oplat: toNum(x.СуммаОплат) });
+  }));
+
+  // Строки данных
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+
+    // Номер
+    const tdNum = document.createElement('td');
+    tdNum.textContent = r.Номер;
+    tdNum.className = 'contract-full-info';
+    const info = getContractInfo(r.Номер);
+    if (info.exists) tdNum.title = `${info.name}\n${info.comment || 'Без примечания'}`;
+    tr.appendChild(tdNum);
+
+    // Наименование
+    const tdName = document.createElement('td');
+    tdName.textContent = info.name || '...';
+    tdName.className = 'contract-name-col';
+    tr.appendChild(tdName);
+
+    // Прим.
+    const tdCom = document.createElement('td');
+    tdCom.textContent = info.comment || '';
+    tdCom.className = 'contract-comment-col';
+    tr.appendChild(tdCom);
+
+           // СуммаЗаказа
+    tr.appendChild(Object.assign(document.createElement('td'), { textContent: sep(r.СуммаЗаказа) }));
+
+    // СуммаОплат
+    tr.appendChild(Object.assign(document.createElement('td'), { textContent: sep(r.СуммаОплат) }));
+
+    // Динамика оплат — спарклайн
+    const tdSpark = document.createElement('td');
+    tdSpark.className = 'spark-cell';
+    const cv = document.createElement('canvas');
+    drawSparkline(cv, sparkHist.get(r.Номер) || []);
+    tdSpark.appendChild(cv);
+    tr.appendChild(tdSpark);
+
+    // Дизайнер (текст)
+    tr.appendChild(Object.assign(document.createElement('td'), { textContent: r.Дизайнер || '' }));
+
+    // Безнал (если числовое — форматируем, иначе выводим как текст)
+    tr.appendChild(Object.assign(document.createElement('td'), { textContent: isNaN(toNum(r.Безнал)) ? (r.Безнал || '') : sep(r.Безнал) }));
+
+    // ССПред
+    tr.appendChild(Object.assign(document.createElement('td'), { textContent: sep(r.ССПред) }));
+
+    // ССПлан
+    tr.appendChild(Object.assign(document.createElement('td'), { textContent: sep(r.ССПлан) }));
+
+    // ССФакт  <-- НОВАЯ ЯЧЕЙКА (добавляем здесь, после ССПлан)
+    tr.appendChild(Object.assign(document.createElement('td'), { textContent: sep(r.ССФакт) }));
+
+    // Дата последней оплаты (когда изменилось значение СуммаОплат)
+    const lastDate = getLastPaymentChangeDate(r.Номер);
+    tr.appendChild(Object.assign(document.createElement('td'), { textContent: lastDate }));
+
+
+    table.appendChild(tr);
+  });
+
+  wrap.appendChild(table);
+
+  // === НАЧАЛО: Отчет по заказам (новая таблица) ===
+// Вставить сюда: сразу после строки "wrap.appendChild(table);"
+
+(function(){ // обёртка, чтобы не засорять глобальную область
+  // контейнер для нового отчета
+  const repHeader = document.createElement('h2');
+  repHeader.textContent = 'Отчет по заказам';
+  repHeader.style.marginTop = '18px';
+  repHeader.style.marginBottom = '6px';
+  wrap.appendChild(repHeader);
+  // Панель управления отчётом (локальная для Дашборда)
+const repControls = document.createElement('div');
+repControls.className = 'dash-controls';
+repControls.style.cssText = 'display:flex;align-items:center;gap:16px;margin:6px 0 8px';
+
+repControls.innerHTML = `
+  <label class="compact-toggle" style="margin:0">
+    <input type="checkbox" id="dashCompact">
+    Компактный вид
+  </label>
+  <label style="font-size:13px">
+    Коэффициент косвенных затрат:
+    <input type="number" id="dashCoef" step="0.01" min="0">
+  </label>
+`;
+wrap.appendChild(repControls);
+
+// Привязка к localStorage (независимо от поля на «Главной»)
+const savedDashCompact = JSON.parse(localStorage.getItem('dashCompact') || 'false');
+const savedDashCoef    = localStorage.getItem('dashCoef') ?? '0.70';
+document.getElementById('dashCompact').checked = savedDashCompact;
+document.getElementById('dashCoef').value      = savedDashCoef;
+
+// Ререндер по изменению настроек
+document.getElementById('dashCompact').onchange = () => {
+  localStorage.setItem('dashCompact', JSON.stringify(document.getElementById('dashCompact').checked));
+  renderDashboard();
+};
+document.getElementById('dashCoef').onchange = () => {
+  localStorage.setItem('dashCoef', document.getElementById('dashCoef').value || '0.70');
+  renderDashboard();
+};
+
+
+  // создаём таблицу отчёта
+  const rpt = document.createElement('table');
+  rpt.className = 'dash-report-table';
+  // Применяем компактный режим при рендере
+if (JSON.parse(localStorage.getItem('dashCompact') || 'false')) {
+  rpt.classList.add('compact-mode');
+}
+  rpt.style.width = '100%';
+  rpt.style.borderCollapse = 'collapse';
+  rpt.style.marginBottom = '12px';
+
+  // заголовки столбцов (в точности: Номер, Наименование, Прим., СуммаЗаказа, СуммаОплат, Остаток оплат, Дизайнер, Безнал, ССПред, ССПлан, ССФакт, ОстатокСС, ИтоговоеСальдо)
+  const hdr = document.createElement('tr');
+  ['Номер','Наименование','Прим.','СуммаЗаказа','СуммаОплат','Остаток оплат','ССПред','ССПлан','ССФакт','ОстатокСС','Косвенные расходы','ИтоговоеСальдо']
+    .forEach(h => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      th.style.padding = '6px 8px';
+      th.style.textAlign = 'left';
+      th.style.borderBottom = '1px solid #ddd';
+      th.style.fontWeight = '600';
+      hdr.appendChild(th);
+    });
+  rpt.appendChild(hdr);
+  // подсветка шапки вычисляемых колонок
+hdr.children[9 ]?.classList.add('col-gray'); // ОстатокСС
+hdr.children[10]?.classList.add('col-gray'); // Косвенные расходы
+hdr.children[11]?.classList.add('col-gray'); // ИтоговоеСальдо
+
+
+  // Получаем последний импорт (в renderDashboard уже есть lastImp, но на всякий случай получаем снова)
+  const lastImp = (store && store.length) ? store[store.length - 1] : null;
+  if(!lastImp) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 13;
+    td.innerHTML = emptyState('Нет данных последнего импорта');
+    td.style.padding = '8px';
+    tr.appendChild(td);
+    rpt.appendChild(tr);
+    wrap.appendChild(rpt);
+    return;
+  }
+
+  // строки данных: берём все строки последнего импорта, исключаем завершённые (__status === 'deleted')
+  const reportRows = lastImp.data.filter(r => r.__status !== 'deleted');
+
+  // контейнер для строк данных (чтобы уметь скрывать/показывать)
+  const tbody = document.createElement('tbody');
+  tbody.className = 'report-data-body';
+
+  // Итоги
+  let totSumOrder = 0;
+  let totSumPay = 0;
+  let totOstatokOplat = 0;
+  let totKosv = 0; // ← НОВОЕ: сумма косвенных расходов
+  let totSSPred = 0;
+  let totSSPlan = 0;
+  let totSSFact = 0;
+  let totOstatokSS = 0;
+  let totItogSaldo = 0;
+
+  // вспомогательная функция приведения числа
+  function n(v){ return toNum(v); }
+
+  reportRows.forEach(r => {
+    const sumOrder = n(r.СуммаЗаказа);
+    const sumPay = n(r.СуммаОплат);
+    const ostatokOplat = (isNaN(sumOrder) ? 0 : sumOrder) - (isNaN(sumPay) ? 0 : sumPay);
+    const ssPred = n(r.ССПред);
+    const ssPlan = n(r.ССПлан);
+    const ssFact = n(r.ССФакт);
+
+    // ОстатокСС = ССПлан - ССФакт, если ССПлан == 0 => ОстатокСС = ССПред - ССФакт
+const ostatokSS = (ssPlan && ssPlan !== 0) ? (ssPlan - ssFact) : (ssPred - ssFact);
+
+// Коэффициент косвенных затрат с этой страницы (независим от поля на Главной)
+const kzInput = document.getElementById('dashCoef');
+const kz = kzInput ? parseFloat(kzInput.value) : 0.70;
+
+// Косвенные расходы = |ОстатокСС| * kz
+const kosv = Math.abs(isNaN(ostatokSS) ? 0 : ostatokSS) * (isNaN(kz) ? 0.70 : kz);
+
+// Итоговое сальдо = Остаток(оплат) - |ОстатокСС| - Косвенные
+const itogSaldo = (isNaN(ostatokOplat) ? 0 : ostatokOplat)
+                - Math.abs(isNaN(ostatokSS) ? 0 : ostatokSS)
+                - (isNaN(kosv) ? 0 : kosv);
+
+
+
+
+    // накопление итогов
+    totSumOrder += (isNaN(sumOrder) ? 0 : sumOrder);
+    totSumPay += (isNaN(sumPay) ? 0 : sumPay);
+    totOstatokOplat += (isNaN(ostatokOplat) ? 0 : ostatokOplat);
+    totSSPred += (isNaN(ssPred) ? 0 : ssPred);
+    totSSPlan += (isNaN(ssPlan) ? 0 : ssPlan);
+    totSSFact += (isNaN(ssFact) ? 0 : ssFact);
+    totOstatokSS += (isNaN(ostatokSS) ? 0 : ostatokSS);
+    totKosv += (isNaN(kosv) ? 0 : kosv); // ← НОВОЕ
+    totItogSaldo += (isNaN(itogSaldo) ? 0 : itogSaldo);
+
+    // строка
+    const tr = document.createElement('tr');
+    const tds = [
+      r.Номер || '',
+      (getContractInfo && getContractInfo(r.Номер) && getContractInfo(r.Номер).name) ? getContractInfo(r.Номер).name : '',
+      (getContractInfo && getContractInfo(r.Номер) && getContractInfo(r.Номер).comment) ? getContractInfo(r.Номер).comment : '',
+      sep(sumOrder),
+      sep(sumPay),
+      sep(ostatokOplat),
+      sep(ssPred),
+      sep(ssPlan),
+      sep(ssFact),
+      sep(ostatokSS),
+      sep(kosv),
+      sep(itogSaldo)
+    ];
+    tds.forEach((val, i) => {
+  const td = document.createElement('td');
+  td.textContent = (typeof val === 'string' && val.length>0) ? val : val;
+  td.style.padding = '6px 8px';
+  td.style.borderBottom = '1px solid #f0f0f0';
+  td.style.fontSize = '13px';
+  // выравниваем числовые колонки вправо (с 3-й по 12-ю)
+  if (i >= 3) td.style.textAlign = 'right';
+  tr.appendChild(td);
+});
+// Те же шрифты/вид, что в других таблицах:
+tr.cells[1]?.classList.add('contract-name-col');    // «Наименование»
+tr.cells[2]?.classList.add('contract-comment-col'); // «Прим.»
+
+// Серый фон для вычисляемых колонок
+tr.cells[9 ]?.classList.add('col-gray'); // ОстатокСС
+tr.cells[10]?.classList.add('col-gray'); // Косвенные расходы
+tr.cells[11]?.classList.add('col-gray'); // ИтоговоеСальдо
+
+// Отрицательные значения — красная подсветка
+if (Number(ostatokSS) < 0) tr.cells[9 ]?.classList.add('neg');
+if (Number(kosv)      < 0) tr.cells[10]?.classList.add('neg');
+if (Number(itogSaldo) < 0) tr.cells[11]?.classList.add('neg');
+
+    tbody.appendChild(tr);
+  });
+
+  rpt.appendChild(tbody);
+
+  // Строка Σ (итоги) — расположим вверху таблицы (перед данными) и сделаем её кликабельной для сворачивания/разворачивания
+  const sumRow = document.createElement('tr');
+  sumRow.style.background = '#f1f6fb';
+  sumRow.style.cursor = 'pointer';
+  sumRow.title = 'Нажмите, чтобы свернуть/развернуть отчет (показать только итоги)';
+  sumRow.className = 'report-sum-row';
+
+  // Создаём ячейки для Σ
+  const sumCells = [
+    'Σ', // Номер
+    '',  // Наименование
+    '',  // Прим.
+    sep(totSumOrder),
+    sep(totSumPay),
+    sep(totOstatokOplat),
+    sep(totSSPred),
+    sep(totSSPlan),
+    sep(totSSFact),
+    sep(totOstatokSS),
+    sep(totKosv),
+    sep(totItogSaldo)
+  ];
+
+  sumCells.forEach((v,i) => {
+    const td = document.createElement('td');
+    td.textContent = v;
+    td.style.padding = '6px 8px';
+    td.style.fontWeight = '700';
+    td.style.borderBottom = '1px solid #ccc';
+    // подчёркиваем числовые колонки визуально
+    if(i >= 3) td.style.textAlign = 'right';
+    sumRow.appendChild(td);
+  });
+// серый фон для вычисляемых колонок в Σ
+sumRow.cells[11]?.classList.add('col-gray');
+sumRow.cells[12]?.classList.add('col-gray');
+// красная подсветка, если итоги отрицательные
+if (totOstatokSS < 0) sumRow.cells[11]?.classList.add('neg');
+if (totItogSaldo < 0) sumRow.cells[12]?.classList.add('neg');
+
+  // вставляем строку Σ перед tbody (чтобы она была сверху)
+  rpt.insertBefore(sumRow, tbody);
+
+  // поведение сворачивания: при клике скрываем/показываем all rows внутри tbody
+  sumRow.addEventListener('click', () => {
+    const currentlyHidden = tbody.style.display === 'none';
+    tbody.style.display = currentlyHidden ? '' : 'none';
+    // Можно добавить визуальный маркер (стрелка) — заменяем первый ячейку с 'Σ' на Σ ▾ / Σ ▸
+    const firstTd = sumRow.cells[0];
+    if(firstTd) {
+      firstTd.textContent = currentlyHidden ? 'Σ ▾' : 'Σ ▸';
+    }
+  });
+  // устанавливаем начальный вид как свернуто (если хотите развёрнутым — поменяйте на '')
+  // Комментарий: пользователь просил "свернули и видим только итоговые значения" — ставим свернуто по умолчанию:
+  tbody.style.display = 'none';
+  // пометим индикатор
+  if(sumRow.cells[0]) sumRow.cells[0].textContent = 'Σ ▸';
+
+  // добавляем таблицу в wrap
+  wrap.appendChild(rpt);
+})(); 
+// === КОНЕЦ: Отчет по заказам ===
+
+
+// ---- поведение: сворачивать/разворачивать таблицу по клику на строку Σ ----
+trSum.style.cursor = 'pointer';
+trSum.title = 'Клик: свернуть/развернуть таблицу (оставить только итоги)';
+trSum.onclick = () => {
+  const collapsed = table.dataset.collapsed === '1';
+  if (!collapsed) {
+    // скрываем все строки с данными (индекс > 1), оставляем заголовок (0) и trSum (1)
+    Array.from(table.rows).forEach((r, i) => {
+      if (i > 1) r.style.display = 'none';
+    });
+    table.dataset.collapsed = '1';
+    // ставим маркер в первой ячейке (можно поменять на стрелку)
+    if (trSum.cells && trSum.cells[0]) trSum.cells[0].textContent = 'Σ ▸';
+  } else {
+    // показываем все обратно
+    Array.from(table.rows).forEach((r) => r.style.display = '');
+    table.dataset.collapsed = '0';
+    if (trSum.cells && trSum.cells[0]) trSum.cells[0].textContent = 'Σ';
+  }
+};
+
+  // CSV экспорт кнопка
+  const btnCsv = document.getElementById('btnDashCsv');
+if (btnCsv) {
+  btnCsv.onclick = () => {
+    const lines = ['\uFEFFНомер;Наименование;Прим.;СуммаЗаказа;СуммаОплат;Дизайнер;Безнал;ССПред;ССПлан;ССФакт;ДатаПоследнейОплаты'];
+    rows.forEach(r => {
+      const info = getContractInfo(r.Номер);
+      const name = (info && info.name) ? info.name.replace(/;/g, ',') : '';
+      const comment = (info && info.comment) ? info.comment.replace(/;/g, ',') : '';
+      const designer = (r.Дизайнер || '').toString().replace(/;/g, ',');
+      const beznal = isNaN(toNum(r.Безнал)) ? (r.Безнал || '') : toNum(r.Безнал);
+      lines.push([
+        r.Номер,
+        name,
+        comment,
+        toNum(r.СуммаЗаказа),
+        toNum(r.СуммаОплат),
+        designer,
+        beznal,
+        toNum(r.ССПред),
+        toNum(r.ССПлан),
+        toNum(r.ССФакт),
+        getLastPaymentChangeDate(r.Номер)
+      ].join(';'));
+    });
+    const csv = lines.join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `dashboard_${fmtDate(new Date().toISOString().split('T')[0])}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+}
+
+
+  // кнопка Refresh
+  const btnRefresh = document.getElementById('btnDashRefresh');
+  if (btnRefresh) btnRefresh.onclick = renderDashboard;
+}
+
+
+/* ════════════════════════════════════════════════════════ INIT ═══════════════════════════════════════════════════════════ */
+// Обработчик поиска в справочнике
+document.addEventListener('DOMContentLoaded', () => {
+  const dirSearch = document.getElementById('dirSearch');
+  if (dirSearch) {
+    dirSearch.addEventListener('input', renderDirectoryTable);
+  }
+});
+
+/* ---------- init ---------- */
+function init() {
+  renderArchive();
+  buildHistory();
+  renderNumList();
+  renderPfArchive();
+}
+init();
+
+// подключаем ссылку на Дашборд
+const dashLink = document.getElementById('linkDash');
+if (dashLink) dashLink.addEventListener('click', (e) => { e.preventDefault(); showDashboard(); });
+
+
+/* ---------- PF archive ---------- */
+function renderPfArchive() {
+  const box = pfArch;
+  box.innerHTML = '';
+  pfStore.forEach((rec, i) => {
+    // контейнер записи
+    const item = document.createElement('div');
+    item.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:6px; border-bottom:1px solid #ddd; cursor:pointer;';
+    // подпись с датой и количеством строк
+    const span = document.createElement('span');
+    span.textContent = `Сверка от ${fmtDate(rec.date)} (${rec.mismatches.length} строк)`;
+    // кнопка удаления
+    const btnDel = Object.assign(document.createElement('button'), {
+      textContent: '✖',
+      className: 'small danger'
+    });
+    btnDel.onclick = e => {
+      e.stopPropagation();
+      if (confirm('Удалить запись сверки?')) {
+        pfStore.splice(i, 1);
+        savePf();
+        renderPfArchive();
+      }
+    };
+    // по клику показываем таблицу этой сверки
+    item.onclick = () => {
+      // запомнить, что выбрали i-ю запись
+      selectedPfIndex = i;
+      renderPfTable(rec.mismatches, Number(pfRange.value));
+      pfResultTitle.textContent = `Расхождения от ${fmtDate(rec.date)} (${rec.mismatches.length} строк)`;
+      pfResultCard.classList.remove('hidden');
+    };
+    // собираем и добавляем
+    item.append(span, btnDel);
+    box.appendChild(item);
+  });
+}
+
+/* ════════════════════════════════════════════════════════ PWA ════════════════════════════════════════════════════════════ */
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {/* офлайн-режим недоступен — не критично */});
+}
+</script>
+</body>
+</html>
