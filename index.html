@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <title>Сверка данных 1С – анализ отклонений</title>
 <link rel="manifest" href="./manifest.webmanifest">
-<meta name="theme-color" content="#1565c0">
+<meta name="theme-color" content="#1A7AE6">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
@@ -13,31 +13,53 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 
-  <!-- Montserrat -->
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- DM Sans -->
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <style>
-    *{box-sizing:border-box;font-family:'Montserrat',sans-serif}
-    body{margin:0;padding:50px;background:#f5f5f5;color:#333}
+    /* ═══ Surf Design System (частичное применение) ═══ */
+    :root{
+      --bg:#FAF9F5;            /* тёплый кремовый фон */
+      --srf:#FFFFFF;           /* поверхности */
+      --t1:#1C1C1E;            /* основной текст */
+      --t2:#8A8985;            /* вторичный */
+      --t3:#C4C3BE;            /* третичный */
+      --acc:#1A7AE6;           /* акцент */
+      --acc-bg:rgba(26,122,230,.06);
+      --ok:#2EBD52;
+      --danger:#E8453A;
+      --warn:#E89A0A;
+      --brd:rgba(40,35,20,.06);        /* тёплый едва заметный бордер */
+      --brd2:rgba(40,35,20,.14);       /* тёплый бордер посильнее (таблицы) */
+      --shadow:0 1px 4px rgba(30,25,10,.03);
+      --ease:cubic-bezier(.22,1,.36,1);
+    }
+    *{box-sizing:border-box;font-family:'DM Sans',-apple-system,sans-serif;-webkit-tap-highlight-color:transparent}
+    body{margin:0;padding:50px;background:var(--bg);color:var(--t1)}
 
     /* cards */
-    .card{background:#fff;border-radius:8px;padding:20px;margin-bottom:16px;box-shadow:0 2px 4px rgba(0,0,0,.05)}
-    h2{margin:0 0 4px;font-size:20px}
+    .card{background:var(--srf);border:1px solid var(--brd);border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:var(--shadow)}
+    h2{margin:0 0 4px;font-size:20px;font-weight:600;letter-spacing:-.3px}
 
-    /* small grey hints */
-    .hint{font-size:12px;color:#666;margin:4px 0 0}
+    /* small hints */
+    .hint{font-size:12px;color:var(--t2);margin:4px 0 0}
 
     /* inputs / buttons */
-    input[type=number]{width:90px;text-align:right}
-    button{background:#2196f3;color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:13px}
-    button.small{padding:2px 6px;font-size:12px}
-    button.danger{background:transparent;color:#f44336}
-    button.danger:hover{background:rgba(244,67,54,.1)}
+    input,select,textarea{border:1.5px solid var(--brd2);border-radius:8px;background:var(--srf);color:var(--t1);transition:border-color .15s var(--ease)}
+    input:focus,select:focus,textarea:focus{outline:none;border-color:var(--acc)}
+    input[type=number]{width:90px;text-align:right;padding:4px 6px}
+    input[type=date]{padding:4px 6px}
+    button{background:var(--acc);color:#fff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;font-weight:500;transition:transform .12s var(--ease),opacity .15s}
+    button:active{transform:scale(.98)}
+    button.small{padding:2px 8px;font-size:12px}
+    button.danger{background:transparent;color:var(--danger)}
+    button.danger:hover{background:rgba(232,69,58,.08)}
     button:disabled{opacity:.5}
 
     /* tables */
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
-    th,td{border:1px solid #ddd;padding:4px 6px;text-align:right}
+    th,td{border:1px solid var(--brd2);padding:4px 6px;text-align:right}
+    th{background:var(--acc-bg);font-weight:600}
     th:first-child,td:first-child{text-align:left}
     tr.new-row{background:#e0f7fa}
     tr.deleted-row{text-decoration:line-through;background:#ffebee}
@@ -47,15 +69,15 @@
 }
 
     td.modified-cell{background:#fff9c4}
-    tr.summary-row{background:#eef2f7;font-weight:500}
+    tr.summary-row{background:rgba(40,35,20,.045);font-weight:600}
 
-    .neg{background:#ff5252;color:#fff}
+    .neg{background:var(--danger);color:#fff}
     .nocost{background:#ffe0b2}
-    .cell-edit{width:100%;border:1px solid #2196f3;border-radius:4px;padding:2px;text-align:right}
+    .cell-edit{width:100%;border:1.5px solid var(--acc);border-radius:6px;padding:2px;text-align:right}
     .hidden{display:none}
 
     /* chart */
-    canvas{background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.05);margin-top:12px;display: block;}
+    canvas{background:var(--srf);border:1px solid var(--brd);border-radius:12px;box-shadow:var(--shadow);margin-top:12px;display:block}
     /* одинаковая ширина графиков */
     .fixed-chart { width: 1000px; max-width: 100%; }
 
@@ -68,7 +90,7 @@
     .box.nocost{background:#ffe0b2}.box.neg{background:#ff5252}
 
     /* reusable table blocks */
-    .tbl-wrap{margin-top:10px;border:1px solid #ddd;border-radius:6px;padding:10px;background:#fafafa}
+    .tbl-wrap{margin-top:10px;border:1px solid var(--brd2);border-radius:12px;padding:10px;background:var(--bg)}
     .tbl-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px}
     .tbl-head input[type="range"]{flex:1}
     .tbl-head input[type="number"]{width:120px}
@@ -82,16 +104,19 @@
     tr.pf-resolved { text-decoration:line-through;color:#999; }
    /* «значительный слайдер» наследует существующие .tbl-head */
     /* history view */
-    #contractList li{cursor:pointer;padding:4px;border-radius:4px}
-    #contractList li:hover{background:#e0e0e0}
-    #contractList li.active{background:#2196f3;color:#fff}
+    #contractList li{cursor:pointer;padding:4px 8px;border-radius:8px;transition:background .15s var(--ease)}
+    #contractList li:hover{background:var(--acc-bg)}
+    #contractList li.active{background:var(--acc);color:#fff}
     .tbl-body{max-height:260px;overflow:auto}
     .tbl-body table{min-width:720px}
     #topNav{
   position:fixed;
   top:0; left:0;
   width:100%;
-  background:#ffffff;
+  background:rgba(250,249,245,.92);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--brd);
   padding:8px 20px;
   box-shadow:0 2px 4px rgba(0,0,0,.08);
   z-index:1000;
@@ -111,10 +136,10 @@ th.col-ind, td.col-ind { width: 36px; text-align: center; }
 
 
 /* Margin colors for coefficients */
-.margin-high{background:#4caf50;color:#fff}
+.margin-high{background:#2EBD52;color:#fff}
 .margin-good{background:#8bc34a;color:#fff}
-.margin-ok{background:#ff9800;color:#fff}
-.margin-low{background:#f44336;color:#fff}
+.margin-ok{background:#E89A0A;color:#fff}
+.margin-low{background:#E8453A;color:#fff}
 tr.coef-changed{background:#fff9c4}
 
 /* Delta bubbles near coefficients */
@@ -144,7 +169,7 @@ tr.coef-changed{background:#fff9c4}
 
 .coef-import-item.active {
   background: #e3f2fd !important;
-  border-left: 3px solid #2196f3;
+  border-left: 3px solid #1A7AE6;
   padding-left: 5px;
 }
 
@@ -480,59 +505,134 @@ tbody tr:hover { background: #f5f9ff !important; }
 body { padding-top: 70px; }
 
 /* ═══ РИСКИ ═══ */
-.risk-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;margin:1px 3px 1px 0;color:#fff;white-space:nowrap}
-.risk-neg{background:#c62828}
-.risk-overrun{background:#e65100}
-.risk-stale{background:#6a1b9a}
-.risk-nocost{background:#757575}
-.risk-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:13px;background:#f5f5f5;margin-right:8px;margin-bottom:6px;cursor:pointer;user-select:none;border:2px solid transparent}
-.risk-chip.active{border-color:#2196f3;background:#e3f2fd}
+.risk-badge{display:inline-block;padding:2px 9px;border-radius:100px;font-size:11px;font-weight:500;margin:1px 3px 1px 0;color:#fff;white-space:nowrap}
+.risk-neg{background:#E8453A}
+.risk-overrun{background:#E89A0A}
+.risk-stale{background:#A855C7}
+.risk-nocost{background:#8A8985}
+.risk-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:13px;background:rgba(40,35,20,.04);margin-right:8px;margin-bottom:6px;cursor:pointer;user-select:none;border:1.5px solid transparent;transition:all .15s var(--ease)}
+.risk-chip:active{transform:scale(.98)}
+.risk-chip.active{border-color:var(--acc);background:var(--acc-bg)}
 .risk-chip .cnt{font-weight:700;font-size:15px}
 .risk-settings label{display:inline-flex;align-items:center;gap:6px;margin-right:16px;font-size:13px}
 .risk-settings input[type=number]{width:70px;padding:3px 6px}
 
 /* ═══ ИИ-АНАЛИЗ ═══ */
-.ai-persona{border:1px solid #e0e0e0;border-radius:8px;padding:14px 16px;margin-bottom:14px;background:#fafafa}
+.ai-persona{border:1px solid var(--brd2);border-radius:12px;padding:14px 16px;margin-bottom:14px;background:var(--bg)}
 .ai-persona h3{margin:0 0 4px;font-size:16px}
 .ai-persona .hint{margin-bottom:8px}
-.ai-prompt-toggle{cursor:pointer;font-size:13px;color:#1565c0;user-select:none}
+.ai-prompt-toggle{cursor:pointer;font-size:13px;color:var(--acc);user-select:none}
 .ai-prompt-wrap{display:none;margin:8px 0}
 .ai-prompt-wrap.open{display:block}
-.ai-prompt-wrap textarea{width:100%;min-height:140px;font-family:monospace;font-size:12px;padding:8px;border:1px solid #ccc;border-radius:6px;resize:vertical;box-sizing:border-box}
+.ai-prompt-wrap textarea{width:100%;min-height:140px;font-family:monospace;font-size:12px;padding:8px;border:1.5px solid var(--brd2);border-radius:8px;resize:vertical;box-sizing:border-box}
 .ai-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
-.ai-period{display:inline-flex;border:1px solid #ccc;border-radius:6px;overflow:hidden}
-.ai-period button{border:none;background:#fff;padding:5px 12px;font-size:13px;cursor:pointer}
-.ai-period button.active{background:#1565c0;color:#fff}
-.ai-run{background:#1565c0;color:#fff;border:none;border-radius:6px;padding:7px 18px;font-size:14px;cursor:pointer}
-.ai-run:disabled{background:#90a4ae;cursor:wait}
-.ai-result{margin-top:10px;padding:12px;background:#fff;border:1px solid #e0e0e0;border-radius:6px;font-size:14px;line-height:1.55;white-space:pre-wrap;display:none}
+.ai-period{display:inline-flex;background:rgba(40,35,20,.04);border-radius:8px;padding:2px;gap:2px}
+.ai-period button{border:none;background:transparent;color:var(--t2);padding:5px 12px;font-size:13px;cursor:pointer;border-radius:6px;transition:all .15s var(--ease)}
+.ai-period button.active{background:var(--srf);color:var(--t1);box-shadow:0 1px 3px rgba(30,25,10,.06)}
+.ai-run{background:var(--acc);color:#fff;border:none;border-radius:8px;padding:7px 18px;font-size:14px;cursor:pointer;transition:transform .12s var(--ease)}
+.ai-run:active{transform:scale(.98)}
+.ai-run:disabled{background:var(--t3);cursor:wait}
+.ai-result{margin-top:10px;padding:12px 16px;background:var(--srf);border:1px solid var(--brd);border-radius:12px;font-size:14px;line-height:1.55;display:none}
+.ai-md-h{font-weight:700;margin:14px 0 6px;color:#263238}
+.ai-md-h1{font-size:17px;border-bottom:2px solid var(--acc-bg);padding-bottom:4px}
+.ai-md-h2{font-size:16px}
+.ai-md-h3,.ai-md-h4{font-size:14.5px}
+.ai-md-p{margin:4px 0}
+.ai-md-gap{height:6px}
+.ai-md-ul{margin:4px 0 8px;padding-left:22px}
+.ai-md-ul li{margin:3px 0}
+.ai-md-num{margin:4px 0;padding-left:4px}
+.ai-md-num>span{font-weight:700;color:var(--acc);margin-right:4px}
+.ai-md-hr{border:none;border-top:1px solid var(--brd2);margin:12px 0}
+table.ai-md-table{border-collapse:collapse;margin:8px 0 12px;font-size:13px;width:auto}
+table.ai-md-table th{background:var(--acc-bg);text-align:left;font-weight:600}
+table.ai-md-table th,table.ai-md-table td{border:1px solid var(--brd2);padding:5px 12px}
+table.ai-md-table tr:nth-child(even) td{background:var(--bg)}
+.ai-result code{background:rgba(40,35,20,.05);border-radius:4px;padding:1px 5px;font-size:12.5px;font-family:monospace}
 .ai-result.show{display:block}
 .ai-spinner{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:aispin .7s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes aispin{to{transform:rotate(360deg)}}
-.ai-meta{font-size:11px;color:#999;margin-top:6px}
+.ai-meta{font-size:11px;color:var(--t3);margin-top:6px}
+/* кнопки-продолжения от агента */
+.ai-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.ai-actions button{background:var(--acc-bg);color:var(--acc);border:1px solid rgba(26,122,230,.25);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s var(--ease)}
+.ai-actions button:hover{transform:scale(1.02);background:rgba(26,122,230,.12)}
+.ai-actions button:active{transform:scale(.98)}
+.ai-actions button:disabled{opacity:.5;transform:none}
+/* прозрачность: что видел ИИ */
+.ai-src{margin-top:8px;font-size:12px}
+.ai-src summary{cursor:pointer;color:var(--t2);user-select:none;padding:4px 0}
+.ai-src summary:hover{color:var(--acc)}
+.ai-src pre{background:rgba(40,35,20,.04);border:1px solid var(--brd);border-radius:8px;padding:10px;margin:6px 0 0;font-size:11px;font-family:monospace;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;color:var(--t2)}
 
 /* ═══ DRAG-N-DROP ═══ */
-#dropOverlay{position:fixed;inset:0;background:rgba(21,101,192,.10);z-index:9999;display:none;align-items:center;justify-content:center;pointer-events:none}
+#dropOverlay{position:fixed;inset:0;background:rgba(26,122,230,.08);backdrop-filter:blur(3px);z-index:9999;display:none;align-items:center;justify-content:center;pointer-events:none}
 #dropOverlay.on{display:flex}
-#dropOverlay .inner{border:3px dashed #1565c0;border-radius:16px;padding:40px 60px;font-size:22px;color:#1565c0;background:rgba(255,255,255,.9)}
+#dropOverlay .inner{border:2px dashed var(--acc);border-radius:16px;padding:40px 60px;font-size:22px;color:var(--acc);background:rgba(250,249,245,.92)}
 
 /* ═══ СПАРКЛАЙНЫ ═══ */
 td.spark-cell{padding:2px 6px !important;vertical-align:middle}
 td.spark-cell canvas{display:block}
+
+/* ═══ ПОДСВЕТКА СТРОК В ВЫГРУЗКАХ (архив + текущая) ═══ */
+#archList table tr:nth-child(even):not(.new-row):not(.deleted-row):not(.summary-row) td:not(.modified-cell):not(.neg):not(.nocost),
+#currentCard table tr:nth-child(even):not(.new-row):not(.deleted-row):not(.summary-row) td:not(.modified-cell):not(.neg):not(.nocost){background:rgba(40,35,20,.03)}
+#archList table tr:hover:not(.new-row):not(.deleted-row):not(.summary-row) td:not(.modified-cell):not(.neg):not(.nocost),
+#currentCard table tr:hover:not(.new-row):not(.deleted-row):not(.summary-row) td:not(.modified-cell):not(.neg):not(.nocost){background:var(--acc-bg)}
+
+/* ═══ НАВИГАЦИЯ-ЧИПЫ ═══ */
+#topNav{display:flex;align-items:center;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+#topNav::-webkit-scrollbar{display:none}
+#topNav a{padding:6px 10px;border-radius:8px;white-space:nowrap;text-decoration:none;color:var(--acc);font-size:14px;font-weight:500;transition:background .15s var(--ease)}
+#topNav a:hover{background:var(--acc-bg)}
+#hideDeletedLabel{margin-left:auto;white-space:nowrap}
+
+/* ═══ МОБИЛЬНАЯ ВЕРСИЯ ═══ */
+@media (max-width: 768px){
+  body{padding:10px;padding-top:60px}
+  #topNav{padding:8px 10px}
+  #topNav a{padding:8px 10px;font-size:13px}
+  #hideDeletedLabel{margin-left:8px}
+  .card{padding:14px 12px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .card table{font-size:12px}
+  .card th,.card td{padding:5px 7px}
+  h2{font-size:18px}
+  /* поля ввода: 16px против авто-зума iOS, крупные тапы */
+  input,select,textarea,button{font-size:16px !important}
+  button{min-height:40px}
+  button.small{min-height:34px}
+  input[type=number],input[type=date]{padding:7px}
+  label{display:block;margin:8px 0}
+  #topNav label{display:inline-flex}
+  /* ИИ-вкладка */
+  #aiKey{width:100% !important;box-sizing:border-box;margin-top:4px}
+  .ai-persona{padding:12px 10px}
+  .ai-controls{gap:10px}
+  .ai-period button{padding:8px 12px}
+  .ai-run{width:100%;padding:10px}
+  /* риски */
+  .risk-settings label{display:block;margin:8px 0}
+  .risk-chip{padding:8px 10px;margin-right:6px}
+  /* оверлей перетаскивания */
+  #dropOverlay .inner{padding:24px;font-size:17px;text-align:center}
+  /* графики не выпирают из карточек */
+  canvas{max-width:100%}
+  td.spark-cell canvas{max-width:none}
+}
 
   </style>
 </head>
 <body>
 <!-- Навигация -->
 <div id="topNav" style="margin-bottom:12px;">
-  <a href="#" id="linkMain">Главная</a> |
-  <a href="#history" id="linkHist">История</a> |
-  <a href="#pf" id="linkPf">Сверка с ПФ</a> |
-  <a href="#coefficients" id="linkCoef">Коэффициенты</a> |
-  <a href="#directory" id="linkDir">Справочник договоров</a> |
-  <a href="#dashboard" id="linkDash">Дашборд</a> |
-  <a href="#risks" id="linkRisks">⚠️ Риски</a> |
-  <a href="#ai" id="linkAi">🤖 ИИ-анализ</a>
+  <a href="#" id="linkMain">Главная</a>
+  <a href="#history" id="linkHist">История</a>
+  <a href="#pf" id="linkPf">Сверка с ПФ</a>
+  <a href="#coefficients" id="linkCoef">Коэффициенты</a>
+  <a href="#directory" id="linkDir">Справочник</a>
+  <a href="#dashboard" id="linkDash">Дашборд</a>
+  <a href="#risks" id="linkRisks">⚠️ Риски</a>
+  <a href="#ai" id="linkAi">🤖 ИИ</a>
   <label id="hideDeletedLabel" style="margin-left:16px;font-size:13px;color:#666;cursor:pointer;user-select:none;">
     <input type="checkbox" id="chkHideDeleted" style="margin-right:4px;">скрыть завершённые
   </label>
@@ -593,22 +693,22 @@ td.spark-cell canvas{display:block}
   <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:6px">
   <label style="display:flex;align-items:center;gap:4px;font-size:13px">
     <input type="checkbox" class="chk" data-s="bal" checked>
-    <span style="display:inline-block;width:14px;height:14px;background:#4caf50;border-radius:2px"></span> Остаток
+    <span style="display:inline-block;width:14px;height:14px;background:#2EBD52;border-radius:2px"></span> Остаток
   </label>
 
   <label style="display:flex;align-items:center;gap:4px;font-size:13px">
     <input type="checkbox" class="chk" data-s="dir" checked>
-    <span style="display:inline-block;width:14px;height:14px;background:#ff9800;border-radius:2px"></span> Прямые
+    <span style="display:inline-block;width:14px;height:14px;background:#E89A0A;border-radius:2px"></span> Прямые
   </label>
 
   <label style="display:flex;align-items:center;gap:4px;font-size:13px">
     <input type="checkbox" class="chk" data-s="ind" checked>
-    <span style="display:inline-block;width:14px;height:14px;background:#9c27b0;border-radius:2px"></span> Косвенные
+    <span style="display:inline-block;width:14px;height:14px;background:#A855C7;border-radius:2px"></span> Косвенные
   </label>
 
   <label style="display:flex;align-items:center;gap:4px;font-size:13px">
     <input type="checkbox" class="chk" data-s="sal" checked>
-    <span style="display:inline-block;width:14px;height:14px;background:#2196f3;border-radius:2px"></span> Сальдо
+    <span style="display:inline-block;width:14px;height:14px;background:#1A7AE6;border-radius:2px"></span> Сальдо
   </label>
 
   <!-- НОВЫЕ ЧЕКБОКСЫ -->
@@ -793,6 +893,11 @@ td.spark-cell canvas{display:block}
         <button class="ai-run" data-run="audit">▶ Запустить</button>
       </div>
       <div class="ai-result" data-res="audit"></div>
+      <div class="ai-actions" data-act="audit"></div>
+      <details class="ai-src" data-src="audit" style="display:none">
+        <summary>▸ что видел ИИ</summary>
+        <pre></pre>
+      </details>
       <div class="ai-meta" data-meta="audit"></div>
     </div>
 
@@ -814,7 +919,60 @@ td.spark-cell canvas{display:block}
         <button class="ai-run" data-run="dyn">▶ Запустить</button>
       </div>
       <div class="ai-result" data-res="dyn"></div>
+      <div class="ai-actions" data-act="dyn"></div>
+      <details class="ai-src" data-src="dyn" style="display:none">
+        <summary>▸ что видел ИИ</summary>
+        <pre></pre>
+      </details>
       <div class="ai-meta" data-meta="dyn"></div>
+    </div>
+
+    <!-- Сравнение выгрузок -->
+    <div class="ai-persona" id="personaDiff">
+      <h3>⚖️ Сравнение выгрузок</h3>
+      <p class="hint">Разбор различий двух последних импортов: аномалии, значительные и подозрительные изменения (СуммаЗаказа, ССПред, ССПлан задним числом), новые и выбывшие договоры.</p>
+      <span class="ai-prompt-toggle" data-p="diff">промт ▸</span>
+      <div class="ai-prompt-wrap" data-pw="diff">
+        <textarea data-pt="diff"></textarea>
+        <button class="small" data-preset="diff">↺ По умолчанию</button>
+      </div>
+      <div class="ai-controls">
+        <button class="ai-run" data-run="diff">▶ Запустить</button>
+      </div>
+      <div class="ai-result" data-res="diff"></div>
+      <div class="ai-actions" data-act="diff"></div>
+      <details class="ai-src" data-src="diff" style="display:none">
+        <summary>▸ что видел ИИ</summary>
+        <pre></pre>
+      </details>
+      <div class="ai-meta" data-meta="diff"></div>
+    </div>
+
+    <!-- Аналитик итогов -->
+    <div class="ai-persona" id="personaHist">
+      <h3>📊 Аналитик итогов</h3>
+      <p class="hint">Анализ таблицы «История импортов (итоги)»: динамика остатков, прямых и косвенных затрат, сальдо. Период — или сравнение двух последних выгрузок.</p>
+      <span class="ai-prompt-toggle" data-p="hist">промт ▸</span>
+      <div class="ai-prompt-wrap" data-pw="hist">
+        <textarea data-pt="hist"></textarea>
+        <button class="small" data-preset="hist">↺ По умолчанию</button>
+      </div>
+      <div class="ai-controls">
+        <div class="ai-period" id="aiHistPeriod">
+          <button data-mode="31">Месяц</button>
+          <button data-mode="183">Полгода</button>
+          <button data-mode="366" class="active">Год</button>
+          <button data-mode="last2">Последние две</button>
+        </div>
+        <button class="ai-run" data-run="hist">▶ Запустить</button>
+      </div>
+      <div class="ai-result" data-res="hist"></div>
+      <div class="ai-actions" data-act="hist"></div>
+      <details class="ai-src" data-src="hist" style="display:none">
+        <summary>▸ что видел ИИ</summary>
+        <pre></pre>
+      </details>
+      <div class="ai-meta" data-meta="hist"></div>
     </div>
 
     <!-- Ревизор ядра -->
@@ -830,6 +988,11 @@ td.spark-cell canvas{display:block}
         <button class="ai-run" data-run="core">▶ Запустить</button>
       </div>
       <div class="ai-result" data-res="core"></div>
+      <div class="ai-actions" data-act="core"></div>
+      <details class="ai-src" data-src="core" style="display:none">
+        <summary>▸ что видел ИИ</summary>
+        <pre></pre>
+      </details>
       <div class="ai-meta" data-meta="core"></div>
     </div>
   </div>
@@ -950,19 +1113,19 @@ td.spark-cell canvas{display:block}
   <div class="card">
     <h2>Статистика коэффициентов</h2>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
-      <div style="background:#f8f9fa;padding:10px;border-radius:4px;border-left:3px solid #4caf50;">
+      <div style="background:#FAF9F5;padding:10px;border-radius:4px;border-left:3px solid #2EBD52;">
         <div style="font-size:11px;color:#666;">Ср. коэф. предв.</div>
         <div id="coefAvgPred" style="font-size:18px;font-weight:600;">—</div>
       </div>
-      <div style="background:#f8f9fa;padding:10px;border-radius:4px;border-left:3px solid #2196f3;">
+      <div style="background:#FAF9F5;padding:10px;border-radius:4px;border-left:3px solid #1A7AE6;">
         <div style="font-size:11px;color:#666;">Ср. коэф. план</div>
         <div id="coefAvgPlan" style="font-size:18px;font-weight:600;">—</div>
       </div>
-      <div style="background:#f8f9fa;padding:10px;border-radius:4px;border-left:3px solid #ff9800;">
+      <div style="background:#FAF9F5;padding:10px;border-radius:4px;border-left:3px solid #E89A0A;">
         <div style="font-size:11px;color:#666;">Ср. маржа</div>
         <div id="coefAvgMargin" style="font-size:18px;font-weight:600;">—</div>
       </div>
-      <div style="background:#f8f9fa;padding:10px;border-radius:4px;border-left:3px solid #9c27b0;">
+      <div style="background:#FAF9F5;padding:10px;border-radius:4px;border-left:3px solid #A855C7;">
         <div style="font-size:11px;color:#666;">Изменившихся</div>
         <div id="coefChangedCount" style="font-size:18px;font-weight:600;">—</div>
       </div>
@@ -1140,10 +1303,10 @@ function showToast(msg, type = 'success') {
     container.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
     document.body.appendChild(container);
   }
-  const colors = { success: '#2e7d32', error: '#c62828', warning: '#e65100' };
+  const colors = { success: '#2EBD52', error: '#E8453A', warning: '#E89A0A' };
   const toast = document.createElement('div');
   toast.textContent = msg;
-  toast.style.cssText = `background:${colors[type]||colors.success};color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.25);opacity:1;transition:opacity .4s;max-width:340px;`;
+  toast.style.cssText = `background:${colors[type]||colors.success};color:#fff;padding:10px 18px;border-radius:100px;font-size:13px;font-weight:500;box-shadow:0 8px 20px rgba(30,25,10,.12);opacity:1;transform:translateY(0);transition:opacity .4s,transform .3s cubic-bezier(.22,1,.36,1);max-width:340px;`;
   container.appendChild(toast);
   setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 3000);
 }
@@ -1294,14 +1457,14 @@ function renderPfTable(arr, thr){
     const btn = Object.assign(document.createElement('button'),{
       className:'small',
       textContent:r.st==='resolved'?'↺':'✓',
-      style: r.st==='resolved' ? 'background:#4caf50;color:#fff' : ''
+      style: r.st==='resolved' ? 'background:#2EBD52;color:#fff' : ''
     });
     btn.onclick = ()=>{ 
       r.st = r.st==='open' ? 'resolved' : 'open';
       if(r.st==='resolved'){ 
         tr.classList.add('pf-resolved');
         btn.textContent = '↺';
-        btn.style.background = '#4caf50';
+        btn.style.background = '#2EBD52';
         btn.style.color = '#fff';
       } else { 
         tr.classList.remove('pf-resolved');
@@ -1573,7 +1736,9 @@ function buildImpactBlock(meta){
 function renderArchive(){
   const arch=document.getElementById('archList');arch.innerHTML='';
   store.forEach((imp,idx)=>{
-    const meta=imp.meta;
+    // защита: у импортов из старых бэкапов meta может быть неполной —
+    // без неё падал весь рендер и «исчезали» ссылки изменений
+    const meta=Object.assign({newCount:0,delCount:0,modCount:0,diffCounts:{},changes:[],allChanges:[],saldoDelta:0},imp.meta||{});
     const head=document.createElement('div');head.className='imp-head';head.style.display='flex';head.style.alignItems='center';head.style.gap='8px';
 
     /* alternating background */
@@ -1869,7 +2034,7 @@ function drawHistChart() {
 
   const padX = 90, padY = 50, topGap = 30, rightGap = 10;
   const colors = [
-  '#4caf50', '#ff9800', '#9c27b0', '#2196f3', '#795548', '#009688',
+  '#2EBD52', '#E89A0A', '#A855C7', '#1A7AE6', '#795548', '#009688',
   '#3f51b5', '#e91e63', '#607d8b', '#8bc34a', '#ff5722'
 ];
 
@@ -2128,10 +2293,10 @@ if (!show.bal && !show.dir && !show.ind && !show.sal && !show.ssb && !show.ssf) 
 
   // Цвета серий (как были)
   const colors = {
-  bal:'#4caf50',   // Остаток
-  dir:'#ff9800',   // Прямые
-  ind:'#9c27b0',   // Косвенные
-  sal:'#2196f3',   // Сальдо
+  bal:'#2EBD52',   // Остаток
+  dir:'#E89A0A',   // Прямые
+  ind:'#A855C7',   // Косвенные
+  sal:'#1A7AE6',   // Сальдо
   ssb:'#06f432',   // СС (план/пред) — цвет соответствует чекбоксу
   ssf:'#f805bb',   // СС факт — цвет соответствует чекбоксу
 };
@@ -2265,7 +2430,7 @@ function makeEditableNumericCell(td, row, field, rerender) {
     inp.type = 'text';
     inp.value = String(currentValue).replace('.', ','); // поддержка запятой
     inp.className = 'cell-edit';
-    inp.style.cssText = 'width:100%;border:1px solid #2196f3;border-radius:4px;padding:2px;text-align:right';
+    inp.style.cssText = 'width:100%;border:1px solid #1A7AE6;border-radius:4px;padding:2px;text-align:right';
 
     const original = td.textContent;
     td.textContent = '';
@@ -2784,7 +2949,7 @@ const avgMargin   = avgOf(coefData, 'margin');
   
   const padX = 90, padY = 50, topGap = 30, rightGap = 10;
   const W = cssWidth, H = cssHeight;
-  const colors = {coefPred: '#4caf50', coefPlan: '#2196f3', margin: '#ff9800'};
+  const colors = {coefPred: '#2EBD52', coefPlan: '#1A7AE6', margin: '#E89A0A'};
   
   const vals = [...dataArr.map(d => d.coefPred), ...dataArr.map(d => d.coefPlan), ...dataArr.map(d => d.margin)];
   const min = Math.min(...vals), max = Math.max(...vals);
@@ -2990,19 +3155,13 @@ function exportPfCsv(rec){
 }
 /* ---------- CSV parser с поддержкой Дизайнер и Безнал ---------- */
 /* ---------- валидация шапки CSV ---------- */
-// Сверяет первую строку файла с ожидаемым списком колонок.
-// Возвращает null если всё ок, иначе — текст ошибки для тоста.
+// Проверяем ТОЛЬКО количество колонок — названия могут быть любыми
+// (бухгалтерия переименовывает столбцы, важен состав и порядок, не текст).
 function validateCsvHeader(txt, expectedCols, label){
   const firstLine = (txt || '').replace(/^\uFEFF/, '').trim().split(/\r?\n/)[0] || '';
-  const got = firstLine.split(';').map(s => s.trim().toLowerCase());
-  const exp = expectedCols.map(s => s.toLowerCase());
-  if (got.length < exp.length) {
-    return `${label}: в шапке ${got.length} колонок вместо ${exp.length}. Ожидается: ${expectedCols.join(';')}`;
-  }
-  for (let i = 0; i < exp.length; i++) {
-    if (got[i] !== exp[i]) {
-      return `${label}: колонка ${i + 1} — «${got[i] || '(пусто)'}», ожидалась «${expectedCols[i]}». Проверьте, тот ли это файл.`;
-    }
+  const got = firstLine.split(';');
+  if (got.length < expectedCols.length) {
+    return `${label}: в шапке ${got.length} колонок вместо ${expectedCols.length}. Нужный порядок: ${expectedCols.join(';')} — названия колонок могут быть любыми, важен порядок.`;
   }
   return null;
 }
@@ -3249,14 +3408,8 @@ document.getElementById('btnUndo').addEventListener('click',()=>{
   if(!store.length)return;
   if(confirm('Удалить последний импорт?')){
     store.pop();save();renderArchive();buildHistory();reRenderCoefs();drawCoefChart();
-    const card=document.getElementById('currentCard');
-    if(!store.length){card.classList.add('hidden');}
-    else if(!card.classList.contains('hidden')){
-      // если текущая таблица на экране — показываем предыдущий (теперь последний) импорт
-      const last=store[store.length-1];
-      document.getElementById('currentTitle').textContent=`Таблица договоров от ${fmtDate(last.date)}`;
-      renderTable(document.getElementById('tblCurrent'),last.data,true);
-    }
+    // после отката текущая таблица всегда убирается — без подмены на предыдущий импорт
+    document.getElementById('currentCard').classList.add('hidden');
   }
 });
 document.getElementById('btnRefresh').addEventListener('click', () => { buildHistory(); showToast('Обновлено', 'success'); });
@@ -3515,6 +3668,26 @@ const AI_DEFAULT_PROMPTS = {
 
 Пиши по-русски, кратко, с цифрами. Если выгрузок в периоде мало для надёжных выводов — честно скажи об этом.`,
 
+  diff: `Ты — аудитор изменений в учёте мебельного производства «Массивбург». Тебе передают сравнение двух последних выгрузок договоров из 1С: все изменения полей с дельтами, отдельно — подозрительные изменения (СуммаЗаказа, ССПред, ССПлан: суммы заказов и себестоимость не должны меняться задним числом без причины), списки новых и выбывших договоров, движение итогов.
+
+Твоя задача:
+1. Оценить масштаб изменений между выгрузками (нормальная рабочая неделя или что-то необычное).
+2. Разобрать подозрительные изменения: какие выглядят как рабочая корректировка, а какие требуют объяснения от бухгалтерии или менеджера — и почему.
+3. Выделить аномалии: разнонаправленные правки, нетипичные суммы, странные совпадения.
+4. Составить короткий список вопросов для проверки в 1С.
+
+Пиши по-русски, кратко, с номерами договоров и цифрами. Не выдумывай данные.`,
+
+  hist: `Ты — финансовый аналитик мебельного производства «Массивбург». Тебе передают таблицу «История импортов (итоги)»: по каждой выгрузке — коэффициент косвенных затрат (kз), суммарный остаток оплат, прямые затраты (себестоимость план/пред), косвенные (прямые × kз) и сальдо (остаток − прямые − косвенные).
+
+Твоя задача:
+1. Описать динамику сальдо: улучшается или ухудшается финансовая позиция портфеля и с какой скоростью.
+2. Разобрать движение составляющих: за счёт чего меняется сальдо — остатки, прямые или косвенные.
+3. Отметить переломные точки и аномальные выгрузки.
+4. Дать 2–3 вывода для руководителя: на что влиять в первую очередь.
+
+Пиши по-русски, кратко, с датами и цифрами. Если период слишком короткий для выводов — скажи прямо.`,
+
   core: `Ты — придирчивый технический ревизор. Тебе передают: (а) методику расчётов приложения «Сверка данных 1С» с формулами в том виде, как они написаны в коде, и (б) результаты автоматических проверок целостности данных последней выгрузки.
 
 Твоя задача:
@@ -3660,40 +3833,217 @@ function aiBuildSelfCheckPayload(){
 • Импортов в хранилище: ${store.length} (${fmtDate(store[0].date)} — ${fmtDate(last.date)}), объём localStorage: ${(lsBytes/1024).toFixed(0)} КБ из ~5120 КБ лимита`;
 }
 
+function aiBuildDiffPayload(){
+  if (store.length < 2) return null;
+  const prev = store[store.length - 2], last = store[store.length - 1];
+  const FIELDS = ['СуммаЗаказа','СуммаОплат','ОстатокОплат','ССПред','ССПлан','ССФакт','Дизайнер','Безнал'];
+
+  // честный пересчёт diff по текущим данным (не полагаемся на сохранённый meta)
+  const mp = new Map(prev.data.map(r => [r.Номер, r]));
+  const lastSet = new Set(last.data.map(r => r.Номер));
+  const all = [], susp = [];
+  last.data.forEach(r => {
+    const o = mp.get(r.Номер);
+    if (!o) return;
+    FIELDS.forEach(k => {
+      const a = toNum(o[k]), b = toNum(r[k]);
+      if (a !== b){
+        const c = { num: r.Номер, field: k, was: a, became: b, delta: b - a };
+        all.push(c);
+        if (SUSPECT.includes(k)) susp.push(c);
+      }
+    });
+  });
+  const news = last.data.filter(r => !mp.has(r.Номер));
+  const dels = prev.data.filter(r => !lastSet.has(r.Номер)).map(r => r.Номер);
+
+  const fmtC = c => `${c.num} • ${c.field}: ${sep(c.was)} → ${sep(c.became)} (Δ ${(c.delta>0?'+':'')+sep(c.delta)})`;
+  const top = [...all].sort((a,b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 40).map(fmtC).join('\n') || '—';
+  const suspTxt = susp.slice(0, 30).map(fmtC).join('\n') || '—';
+
+  const t = arr => arr.reduce((a,r) => { a.z+=toNum(r.СуммаЗаказа); a.o+=toNum(r.СуммаОплат); a.b+=toNum(r.ОстатокОплат); return a; }, {z:0,o:0,b:0});
+  const tp = t(prev.data), tl = t(last.data);
+  const saldo = (last.meta && last.meta.saldoDelta != null) ? sep(Math.round(last.meta.saldoDelta)) : 'н/д';
+
+  return `СРАВНЕНИЕ ДВУХ ПОСЛЕДНИХ ВЫГРУЗОК: ${fmtDate(prev.date)} → ${fmtDate(last.date)}
+Договоров: ${prev.data.length} → ${last.data.length} | Новых: ${news.length} | Выбыло: ${dels.length} | Изменений полей: ${all.length}
+Итоги: заказы ${sep(Math.round(tp.z))} → ${sep(Math.round(tl.z))}, оплаты ${sep(Math.round(tp.o))} → ${sep(Math.round(tl.o))}, остатки ${sep(Math.round(tp.b))} → ${sep(Math.round(tl.b))}
+Изменение сальдо по методике приложения: ${saldo}
+
+ВСЕ ИЗМЕНЕНИЯ ПОЛЕЙ (топ-40 по |Δ|):
+${top}
+
+ПОДОЗРИТЕЛЬНЫЕ ИЗМЕНЕНИЯ (поля ${SUSPECT.join(', ')} — не должны меняться задним числом без причины):
+${suspTxt}
+
+НОВЫЕ ДОГОВОРЫ: ${news.slice(0,15).map(r => `${r.Номер} (заказ ${sep(toNum(r.СуммаЗаказа))})`).join(', ') || '—'}
+ВЫБЫВШИЕ: ${dels.slice(0,15).join(', ') || '—'}`;
+}
+
+function aiBuildHistPayload(mode){
+  if (store.length < 2) return null;
+  let imps;
+  if (mode === 'last2') imps = store.slice(-2);
+  else {
+    const from = new Date(store[store.length - 1].date);
+    from.setDate(from.getDate() - Number(mode));
+    imps = store.filter(i => new Date(i.date) >= from);
+  }
+  if (imps.length < 2) return null;
+
+  const lines = imps.map(imp => {
+    const { bal, ssAbs } = calcTotals(imp.data);
+    const ind = ssAbs * imp.coef, sal = bal - ssAbs - ind;
+    return `${fmtDate(imp.date)}: kз=${imp.coef.toFixed(2)}, остаток ${sep(Math.round(bal))}, прямые ${sep(Math.round(ssAbs))}, косвенные ${sep(Math.round(ind))}, сальдо ${sep(Math.round(sal))}`;
+  }).join('\n');
+
+  return `ИСТОРИЯ ИМПОРТОВ (ИТОГИ) — ${imps.length} выгрузок, ${fmtDate(imps[0].date)} — ${fmtDate(imps[imps.length-1].date)}
+Методика: Остаток — сумма остатков оплат по живым договорам; Прямые — себестоимость (план, при отсутствии — пред); Косвенные = Прямые × kз; Сальдо = Остаток − Прямые − Косвенные.
+
+${lines}`;
+}
+
 /* ---------- вызов API и вывод ---------- */
 function aiRenderResult(el, text){
-  // безопасный мини-рендер: экранируем, затем **жирный**, заголовки и маркеры
-  let h = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  h = h.replace(/^#{1,3} (.*)$/gm, '<b style="font-size:15px">$1</b>');
-  h = h.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-  h = h.replace(/^[-*] /gm, '• ');
-  el.innerHTML = h;
+  // безопасный markdown-рендер: сначала экранируем всё, потом построчно собираем разметку
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inline = s => esc(s)
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  const lines = text.split(/\r?\n/);
+  let html = '', i = 0, listOpen = false;
+  const closeList = () => { if (listOpen){ html += '</ul>'; listOpen = false; } };
+
+  while (i < lines.length){
+    const ln = lines[i];
+
+    // таблица: строка с | и следом разделитель |---|---|
+    if (/^\s*\|/.test(ln) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|?\s*$/.test(lines[i+1])){
+      closeList();
+      const cells = l => l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(c => inline(c.trim()));
+      const headers = cells(ln);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i])){ rows.push(cells(lines[i])); i++; }
+      html += '<table class="ai-md-table"><tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>'
+            + rows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('')
+            + '</table>';
+      continue;
+    }
+    // горизонтальная черта
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(ln)){ closeList(); html += '<hr class="ai-md-hr">'; i++; continue; }
+    // заголовки # .. ####
+    let m = ln.match(/^\s*(#{1,4})\s+(.*)$/);
+    if (m){ closeList(); html += `<div class="ai-md-h ai-md-h${m[1].length}">${inline(m[2])}</div>`; i++; continue; }
+    // маркированный список
+    m = ln.match(/^\s*[-*•·]\s+(.*)$/);
+    if (m){
+      if (!listOpen){ html += '<ul class="ai-md-ul">'; listOpen = true; }
+      html += `<li>${inline(m[1])}</li>`; i++; continue;
+    }
+    // нумерованный список
+    m = ln.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (m){ closeList(); html += `<div class="ai-md-num"><span>${m[1]}.</span>${inline(m[2])}</div>`; i++; continue; }
+    // пустая строка
+    if (!ln.trim()){ closeList(); html += '<div class="ai-md-gap"></div>'; i++; continue; }
+    // обычный абзац
+    closeList();
+    html += `<div class="ai-md-p">${inline(ln)}</div>`;
+    i++;
+  }
+  closeList();
+  el.innerHTML = html;
   el.classList.add('show');
 }
 
-async function aiRun(personaId){
-  const cfg = aiLoadCfg();
-  const btn  = document.querySelector(`[data-run="${personaId}"]`);
-  const res  = document.querySelector(`[data-res="${personaId}"]`);
-  const meta = document.querySelector(`[data-meta="${personaId}"]`);
+const AI_ACTIONS_SUFFIX = `
 
-  if (!cfg.key){ showToast('Введите API-ключ в настройках выше', 'warning'); return; }
+В самом конце ответа, отдельной последней строкой, добавь блок:
+ACTIONS: ["вопрос 1","вопрос 2","вопрос 3"]
+— 2–4 коротких (до 60 символов) follow-up действия, которые логично продолжают твой анализ: углубиться в конкретный договор, сравнить периоды, сформулировать поручение и т.п. Только валидный JSON-массив строк в одной строке. Не упоминай этот блок в основном тексте.`;
+
+const aiChats = {}; // personaId → [{role, content}] — история диалога субличности
+
+function aiParseActions(text){
+  const m = text.match(/\n?ACTIONS:\s*(\[[^\n]*\])\s*$/);
+  if (!m) return { clean: text, actions: [] };
+  let actions = [];
+  try { actions = JSON.parse(m[1]).filter(a => typeof a === 'string' && a.trim()).slice(0, 4); }
+  catch(e){ /* модель сломала формат — просто без кнопок */ }
+  return { clean: text.slice(0, m.index).trimEnd(), actions };
+}
+
+function aiRenderActions(personaId, actions){
+  const box = document.querySelector(`[data-act="${personaId}"]`);
+  box.innerHTML = '';
+  actions.forEach(a => {
+    const b = document.createElement('button');
+    b.textContent = a;
+    b.addEventListener('click', () => aiFollowup(personaId, a));
+    box.appendChild(b);
+  });
+}
+
+function aiShowSource(personaId, text){
+  const det = document.querySelector(`[data-src="${personaId}"]`);
+  det.style.display = '';
+  det.querySelector('pre').textContent = text;
+}
+
+// первый запуск: свежий payload, история сбрасывается
+async function aiRun(personaId){
   if (!store.length){ showToast('Нет импортов — сначала загрузите CSV на главной', 'warning'); return; }
 
   let payload;
   if (personaId === 'audit') payload = aiBuildAuditPayload();
   else if (personaId === 'core') payload = aiBuildSelfCheckPayload();
+  else if (personaId === 'diff'){
+    payload = aiBuildDiffPayload();
+    if (!payload){ showToast('Для сравнения нужны минимум две выгрузки', 'warning'); return; }
+  }
+  else if (personaId === 'hist'){
+    const mode = document.querySelector('#aiHistPeriod button.active').dataset.mode;
+    payload = aiBuildHistPayload(mode);
+    if (!payload){ showToast('В выбранном периоде меньше двух выгрузок — итоги не сравнить', 'warning'); return; }
+  }
   else {
     const days = Number(document.querySelector('#aiPeriod button.active').dataset.days);
     payload = aiBuildDynamicsPayload(days);
     if (!payload){ showToast('В выбранном периоде меньше двух выгрузок — динамику не построить', 'warning'); return; }
   }
 
-  const systemPrompt = document.querySelector(`[data-pt="${personaId}"]`).value;
+  aiChats[personaId] = [{ role: 'user', content: payload }];
+  aiShowSource(personaId, payload);
+  await aiSend(personaId, document.querySelector(`[data-run="${personaId}"]`));
+}
+
+// продолжение по кнопке-действию
+async function aiFollowup(personaId, question){
+  const chat = aiChats[personaId];
+  if (!chat || !chat.length) return;
+  chat.push({ role: 'user', content: question });
+  aiShowSource(personaId, question + '\n\n(+ вся предыдущая переписка субличности в контексте)');
+  // блокируем кнопки действий на время запроса
+  document.querySelectorAll(`[data-act="${personaId}"] button`).forEach(b => b.disabled = true);
+  await aiSend(personaId, document.querySelector(`[data-run="${personaId}"]`));
+}
+
+// общее ядро: отправка текущей истории, рендер ответа, действия
+async function aiSend(personaId, btn){
+  const cfg = aiLoadCfg();
+  const res  = document.querySelector(`[data-res="${personaId}"]`);
+  const meta = document.querySelector(`[data-meta="${personaId}"]`);
+  if (!cfg.key){ showToast('Введите API-ключ в настройках выше', 'warning'); return; }
+
+  const systemPrompt = document.querySelector(`[data-pt="${personaId}"]`).value + AI_ACTIONS_SUFFIX;
+  const chat = aiChats[personaId];
+  // страховка от разрастания контекста: первое сообщение (данные) + последние 10 реплик
+  const messages = chat.length > 11 ? [chat[0], ...chat.slice(-10)] : chat;
+
   btn.disabled = true;
   const btnText = btn.textContent;
   btn.innerHTML = '<span class="ai-spinner"></span>Думает…';
-  res.classList.remove('show');
   meta.textContent = '';
   const t0 = Date.now();
 
@@ -3710,7 +4060,7 @@ async function aiRun(personaId){
         model: cfg.model,
         max_tokens: 3000,
         system: systemPrompt,
-        messages: [{ role: 'user', content: payload }]
+        messages
       })
     });
     const data = await resp.json();
@@ -3720,11 +4070,15 @@ async function aiRun(personaId){
       if (resp.status === 429) throw new Error('Превышен лимит запросов (429). Подождите минуту.');
       throw new Error(msg);
     }
-    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n') || '(пустой ответ)';
-    aiRenderResult(res, text);
+    const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n') || '(пустой ответ)';
+    chat.push({ role: 'assistant', content: raw });
+    const { clean, actions } = aiParseActions(raw);
+    aiRenderResult(res, clean);
+    aiRenderActions(personaId, actions);
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
     const usage = data.usage ? ` • токены: ${data.usage.input_tokens}→${data.usage.output_tokens}` : '';
-    meta.textContent = `${cfg.model} • ${secs} с${usage} • ${new Date().toLocaleString('ru-RU')}`;
+    const turn = Math.floor(chat.length / 2);
+    meta.textContent = `${cfg.model} • реплика ${turn} • ${secs} с${usage} • ${new Date().toLocaleString('ru-RU')}`;
   } catch(err) {
     res.textContent = '⛔ ' + (err.message === 'Failed to fetch'
       ? 'Сеть/CORS: запрос не дошёл до api.anthropic.com. Проверьте интернет и блокировщики.'
@@ -3733,6 +4087,7 @@ async function aiRun(personaId){
   } finally {
     btn.disabled = false;
     btn.textContent = btnText;
+    document.querySelectorAll(`[data-act="${personaId}"] button`).forEach(b => b.disabled = false);
   }
 }
 
@@ -3750,7 +4105,7 @@ async function aiRun(personaId){
   });
 
   const prompts = aiLoadPrompts();
-  ['audit','dyn','core'].forEach(id => {
+  ['audit','dyn','diff','hist','core'].forEach(id => {
     const ta = document.querySelector(`[data-pt="${id}"]`);
     ta.value = prompts[id];
     ta.addEventListener('change', () => aiSavePrompt(id, ta.value));
@@ -3765,10 +4120,12 @@ async function aiRun(personaId){
     document.querySelector(`[data-run="${id}"]`).addEventListener('click', () => aiRun(id));
   });
 
-  document.querySelectorAll('#aiPeriod button').forEach(b => {
-    b.addEventListener('click', () => {
-      document.querySelectorAll('#aiPeriod button').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
+  ['aiPeriod','aiHistPeriod'].forEach(pid => {
+    document.querySelectorAll(`#${pid} button`).forEach(b => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll(`#${pid} button`).forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+      });
     });
   });
 
@@ -3795,13 +4152,13 @@ function drawSparkline(canvas, points){
   const py = v => h - 4 - (h - 8) * ((v - min) / span);
 
   const flat = max === min;
-  ctx.strokeStyle = flat ? '#bbb' : '#1565c0';
+  ctx.strokeStyle = flat ? '#C4C3BE' : '#1A7AE6';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   points.forEach((p, i) => i ? ctx.lineTo(px(i), py(p.oplat)) : ctx.moveTo(px(i), py(p.oplat)));
   ctx.stroke();
 
-  ctx.fillStyle = flat ? '#bbb' : '#1565c0';
+  ctx.fillStyle = flat ? '#C4C3BE' : '#1A7AE6';
   ctx.beginPath();
   ctx.arc(px(points.length - 1), py(vals[vals.length - 1]), 2.2, 0, 7);
   ctx.fill();
@@ -4723,6 +5080,18 @@ function renderPfArchive() {
     box.appendChild(item);
   });
 }
+
+/* ══════════════════════════════════════════════ АДАПТИВНОСТЬ: перерисовка ════════════════════════════════════════════════ */
+// при повороте экрана / изменении окна перерисовываем текущую вкладку (графики берут ширину родителя)
+let _rszT = null, _rszW = window.innerWidth;
+window.addEventListener('resize', () => {
+  clearTimeout(_rszT);
+  _rszT = setTimeout(() => {
+    if (Math.abs(window.innerWidth - _rszW) < 60) return;
+    _rszW = window.innerWidth;
+    window.dispatchEvent(new Event('hashchange')); // роутер сам перерисует активную вкладку
+  }, 300);
+});
 
 /* ════════════════════════════════════════════════════════ PWA ════════════════════════════════════════════════════════════ */
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
