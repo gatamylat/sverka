@@ -461,6 +461,22 @@ td.col-gray.neg {
   color: #fff !important;
 }
 
+/* 3.9 — Баланс входа */
+.inflow-kpi{display:flex;gap:14px;flex-wrap:wrap}
+.inflow-kpi > div{flex:1 1 200px;border:1px solid var(--brd2);border-radius:12px;padding:14px 16px;background:var(--bg)}
+.inflow-kpi .k-lbl{font-size:12px;color:var(--t2);margin-bottom:6px}
+.inflow-kpi .k-val{font-size:24px;font-weight:600;line-height:1.15;font-variant-numeric:tabular-nums}
+.inflow-kpi .k-sub{font-size:11px;color:var(--t2);margin-top:6px}
+.k-ok{color:var(--ok)}
+.k-bad{color:var(--danger)}
+td.cell-ok{background:rgba(46,189,82,.12)}
+td.cell-bad{background:rgba(232,69,58,.12)}
+tr.inflow-mrow{cursor:pointer}
+tr.inflow-mrow:hover td{background:var(--acc-bg)}
+tr.inflow-brk td{color:var(--t2);font-style:italic}
+table.inflow-sub th,table.inflow-sub td{font-size:12px;padding:3px 6px}
+table.inflow-sub td.tl{text-align:left}
+
 /* 3.8 — Пустые состояния */
 .empty-state {
   color: #999;
@@ -631,6 +647,7 @@ td.spark-cell canvas{display:block}
   <a href="#coefficients" id="linkCoef">Коэффициенты</a>
   <a href="#directory" id="linkDir">Справочник</a>
   <a href="#dashboard" id="linkDash">Дашборд</a>
+  <a href="#inflow" id="linkInflow">📥 Вход</a>
   <a href="#risks" id="linkRisks">⚠️ Риски</a>
   <a href="#ai" id="linkAi">🤖 ИИ</a>
   <label id="hideDeletedLabel" style="margin-left:16px;font-size:13px;color:#666;cursor:pointer;user-select:none;">
@@ -834,6 +851,68 @@ td.spark-cell canvas{display:block}
 
     <div id="dashTableWrap"></div>
   </div>
+</section>
+
+<!-- ============ БАЛАНС ВХОДА ============ -->
+<section id="inflowView" style="display:none;">
+
+  <div class="card">
+    <h2>📥 Баланс входа</h2>
+    <p class="hint">Сколько новых договоров заводится в месяц и сколько нужно заводить, чтобы покрыть расходы. Всё считается из архива снимков выгрузки — ручного ввода нет.</p>
+    <div class="tbl-head" style="flex-wrap:wrap;margin-top:12px;">
+      <label>Окно усреднения прямых, дней:
+        <input type="number" id="inflowWindow" min="30" max="365" step="15" value="90" style="width:80px;padding:3px 6px;">
+      </label>
+      <label style="margin-left:12px;">Коэффициент косвенных:
+        <input type="number" id="inflowCoef" min="0" step="0.01" style="width:80px;padding:3px 6px;">
+      </label>
+      <button id="btnInflowRefresh" class="small" style="margin-left:12px;">Обновить</button>
+      <button id="btnInflowCsv" class="small" style="margin-left:8px;">CSV ⬳</button>
+    </div>
+    <p class="hint" id="inflowMeta"></p>
+  </div>
+
+  <!-- Блок 1: три числа -->
+  <div class="card">
+    <div id="inflowKpi" class="inflow-kpi"></div>
+    <div id="inflowCoefBox" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- Блок 3: график -->
+  <div class="card">
+    <h2>Набор по месяцам и порог</h2>
+    <p class="hint">Синяя линия — набор новых договоров. Красная горизонталь — порог безубыточности. Пунктирные вертикали — разрывы ряда выгрузки.</p>
+    <canvas id="inflowChart" width="1000" height="360"></canvas>
+  </div>
+
+  <!-- Блок 2 + 4: таблица по месяцам с раскрытием -->
+  <div class="card">
+    <h2>По месяцам</h2>
+    <p class="hint">Клик по строке — список договоров месяца. Галочка «искл.» убирает договор из расчёта (отменённые и ошибочно заведённые).</p>
+    <div id="inflowTableWrap"></div>
+  </div>
+
+  <!-- Контроль -->
+  <div class="card">
+    <h2>Контроль</h2>
+    <p class="hint">Сверка расчёта с контрольными значениями ТЗ. Расхождение больше 1% означает ошибку в обработке заглушек, исключений или разрывов.</p>
+    <div id="inflowControlWrap"></div>
+  </div>
+
+  <!-- Сальдо по времени -->
+  <div class="card">
+    <h2>Сальдо: объём против времени</h2>
+    <p class="hint">Старая формула привязывает косвенные к остатку себестоимости. Новая — к сроку доделки портфеля. Обе показаны рядом.</p>
+    <div id="inflowSaldoWrap"></div>
+  </div>
+
+  <!-- Исключения -->
+  <div class="card">
+    <h2>Исключённые договоры</h2>
+    <p class="hint">Отменённые и ошибочно заведённые. Не участвуют ни в наборе, ни в прямых, ни в коэффициенте.</p>
+    <div id="inflowExclWrap"></div>
+  </div>
+
 </section>
 
 <!-- ============ РИСКИ ============ -->
@@ -2180,7 +2259,10 @@ function calcTotals(rows){
 function buildHistory(){
   const wrap=document.getElementById('tblHist');wrap.innerHTML='';
   const tbl=document.createElement('table');
-  const trh=document.createElement('tr');['Дата','kз','Остаток','Прямые','Косвенные','Сальдо'].forEach(h=>trh.appendChild(Object.assign(document.createElement('th'),{textContent:h})));tbl.appendChild(trh);
+  const trh=document.createElement('tr');['Дата','kз','Остаток','Прямые','Косвенные','Сальдо','Косвенные (t)','Сальдо (t)'].forEach(h=>trh.appendChild(Object.assign(document.createElement('th'),{textContent:h})));tbl.appendChild(trh);
+
+  // Альтернативная модель: косвенные текут по календарю, а не растут с объёмом работ
+  const __inf = (typeof inflowSnapshot === 'function') ? inflowSnapshot() : null;
 
   const dataArr=[];
   store.forEach((imp, idx)=>{
@@ -2212,8 +2294,22 @@ imp.data
       i.addEventListener('blur',()=>{imp.coef=parseFloat(i.value)||0;tdCoef.textContent=imp.coef.toFixed(2);save();buildHistory();});
     });
     tr.appendChild(tdCoef);
+    // Срок доделки = Остаток СС / Прямые(мес); Косвенные = Косвенные(мес) × срок
+    let indT = null, salT = null;
+    if (__inf && __inf.directMonth > 0) {
+      const finish = ssAbs / __inf.directMonth;
+      indT = __inf.indirectMonth * finish;
+      salT = bal - ssAbs - indT;
+    }
     [bal,ssAbs,ind,sal].forEach(v=>{
       const td=document.createElement('td');td.textContent=sep(v);if(v<0)td.classList.add('neg');tr.appendChild(td);
+    });
+    [indT,salT].forEach(v=>{
+      const td=document.createElement('td');
+      td.style.color='var(--t2)';
+      td.textContent = (v===null) ? '—' : sep(Math.round(v));
+      if(v!==null && v<0) td.classList.add('neg');
+      tr.appendChild(td);
     });
     tbl.appendChild(tr);
     dataArr.push({ date: fmtDate(imp.date), bal, dir: ssAbs, ind, sal, ssb, ssf });
@@ -3048,7 +3144,8 @@ const exportJSON = () => {
         dashCompact: JSON.parse(localStorage.getItem('dashCompact') || 'false'),
         dashCoef: localStorage.getItem('dashCoef') || '0.70',
         pfThreshold: Number(localStorage.getItem(LS_THR) || 0),
-        histChecks: JSON.parse(localStorage.getItem(HIST_CHECKS_LS) || '{}')
+        histChecks: JSON.parse(localStorage.getItem(HIST_CHECKS_LS) || '{}'),
+        excluded: JSON.parse(localStorage.getItem('inflowExcludedV1') || '[]')
       }
     }
   };
@@ -3085,6 +3182,7 @@ const importJSON = file => {
           localStorage.setItem('dashCoef', s.dashCoef || '0.70');
           localStorage.setItem(LS_THR, s.pfThreshold || 0);
           localStorage.setItem(HIST_CHECKS_LS, JSON.stringify(s.histChecks || {}));
+          if (Array.isArray(s.excluded)) localStorage.setItem('inflowExcludedV1', JSON.stringify(s.excluded));
         }
         
         showToast('✅ Полный импорт завершён: ' + store.length + ' импортов, ' + pfStore.length + ' сверок ПФ', 'success');
@@ -4230,7 +4328,7 @@ function isRealDate(iso){
 /* ======== ROUTER (#main / #history / #pf / #coefficients) ======== */
 
 // Все панели-секции (не .card главного экрана)
-const PANEL_IDS = ['historyView', 'pfView', 'coefView', 'directoryView', 'dashboardView', 'risksView', 'aiView'];
+const PANEL_IDS = ['historyView', 'pfView', 'coefView', 'directoryView', 'dashboardView', 'inflowView', 'risksView', 'aiView'];
 
 // Управляет ТОЛЬКО видимостью. Вся логика инициализации — в show*() функциях.
 function showView(name) {
@@ -4255,6 +4353,7 @@ function showPf()        { showView('pf'); }
 function showCoef()      { showView('coef'); renderCoefImportsArchive(); drawCoefChart(); }
 function showDirectory() { showView('directory'); renderDirectoryTable(); showMismatchesReport(); }
 function showDashboard() { showView('dashboard'); renderDashboard(); }
+function showInflow()    { showView('inflow'); renderInflow(); }
 function showRisks()     { showView('risks'); renderRisks(); }
 function showAi()        { showView('ai'); }
 
@@ -4306,6 +4405,8 @@ window.addEventListener('hashchange', () => {
     showDirectory();
   } else if (location.hash === '#dashboard') {
     showDashboard();
+  } else if (location.hash === '#inflow') {
+    showInflow();
   } else if (location.hash === '#risks') {
     showRisks();
   } else if (location.hash === '#ai') {
@@ -5092,6 +5193,607 @@ window.addEventListener('resize', () => {
     window.dispatchEvent(new Event('hashchange')); // роутер сам перерисует активную вкладку
   }, 300);
 });
+
+
+/* ═══════════════════════════════════════════ БАЛАНС ВХОДА ═══════════════════════════════════════════ */
+/* Экран считается только из data.store[], data.contractsDirectory и settings.dashCoef.
+   Ни новых сущностей, ни ручного ввода, ни внешних файлов. ТЗ v3 от 09.08.2026. */
+
+const INFLOW_EXCL_KEY = 'inflowExcludedV1';
+const DAYS_IN_MONTH   = 30.44;
+const BREAK_PCT       = 0.30;   // >30% изменения числа договоров между снимками — разрыв ряда
+
+// Отменённые и ошибочно заведённые договоры (сид по умолчанию, дальше правится галочками)
+const INFLOW_EXCL_DEFAULT = ['24-04-01','24-04-02','22-03-25','25-23-02','25-31-01','26-03-01-01','24-09-02','24-30-02'];
+
+function loadExcluded() {
+  const raw = localStorage.getItem(INFLOW_EXCL_KEY);
+  if (raw === null) {                                   // первый запуск — заводим список из ТЗ
+    localStorage.setItem(INFLOW_EXCL_KEY, JSON.stringify(INFLOW_EXCL_DEFAULT));
+    return new Set(INFLOW_EXCL_DEFAULT);
+  }
+  try { return new Set(JSON.parse(raw) || []); } catch(e) { return new Set(); }
+}
+function saveExcluded(set) {
+  try { localStorage.setItem(INFLOW_EXCL_KEY, JSON.stringify([...set])); }
+  catch(e) { showToast('⚠️ Хранилище заполнено. Исключения не сохранены.', 'error'); }
+}
+
+const monthKey   = iso => String(iso).slice(0, 7);
+const monthLabel = key => {
+  const M = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+  const [y, m] = key.split('-');
+  return M[Number(m) - 1] + ' ' + y;
+};
+const dayDiff = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
+
+// Живые строки снимка: без удалённых и без исключённых договоров
+function liveRows(snap, excl) {
+  return snap.data.filter(r => r.__status !== 'deleted' && r.Номер && !excl.has(String(r.Номер).trim()));
+}
+
+/* ─────────────────────────── ЯДРО РАСЧЁТА ─────────────────────────── */
+
+function computeInflow(opts) {
+  const windowDays = (opts && opts.windowDays) || 90;
+  const excl  = loadExcluded();
+  const snaps = [...store].filter(s => s && s.date && Array.isArray(s.data))
+                          .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (snaps.length < 2) return { ok: false, reason: 'Нужно минимум два снимка выгрузки.' };
+
+  /* --- 1. Первое появление и итоговая сумма по каждому договору --- */
+  // Критично: сумма из ПОСЛЕДНЕГО снимка, а не на момент появления.
+  // Договоры заводятся с заглушкой 1 ₽ и получают настоящую цену позже.
+  const first = new Map();   // номер → { date, idx }
+  const last  = new Map();   // номер → { date, sum, ssFact, pays }
+
+  snaps.forEach((snap, idx) => {
+    liveRows(snap, excl).forEach(r => {
+      const num = String(r.Номер).trim();
+      if (!first.has(num)) first.set(num, { date: snap.date, idx });
+      last.set(num, {
+        date  : snap.date,
+        sum   : toNum(r.СуммаЗаказа),
+        ssFact: toNum(r.ССФакт),
+        pays  : toNum(r.СуммаОплат)
+      });
+    });
+  });
+
+  /* --- 2. Разрывы ряда --- */
+  // Если число договоров между соседними снимками меняется больше чем на 30% —
+  // снимок помечается разрывом и прирост через него не вычисляется.
+  const counts = snaps.map(s => liveRows(s, excl).length);
+  const breaks = [];                     // индексы снимков-разрывов
+  const intervals = [];                  // корректные интервалы для прироста
+  for (let i = 1; i < snaps.length; i++) {
+    const prevN = counts[i - 1] || 1;
+    const delta = Math.abs(counts[i] - prevN) / prevN;
+    const days  = dayDiff(snaps[i - 1].date, snaps[i].date);
+    const brk   = delta > BREAK_PCT;
+    if (brk) breaks.push({ idx: i, date: snaps[i].date, from: counts[i - 1], to: counts[i], pct: delta });
+    intervals.push({ i, from: snaps[i - 1].date, to: snaps[i].date, days, break: brk });
+  }
+
+  /* --- 3. Прирост прямых затрат по каждому интервалу --- */
+  // Прямые(период) = Σ max(0, ССФакт(конец) − ССФакт(начало)) по общим договорам
+  //                + Σ ССФакт(конец) по появившимся за период
+  const firstDate = snaps[0].date;       // первичная загрузка
+  intervals.forEach(iv => {
+    if (iv.break || iv.days <= 0) { iv.direct = null; iv.rate = null; return; }
+    const prev = new Map(liveRows(snaps[iv.i - 1], excl).map(r => [String(r.Номер).trim(), toNum(r.ССФакт)]));
+    let sum = 0;
+    liveRows(snaps[iv.i], excl).forEach(r => {
+      const num = String(r.Номер).trim();
+      const ss  = toNum(r.ССФакт);
+      if (prev.has(num)) sum += Math.max(0, ss - prev.get(num));
+      else               sum += ss;                       // появился за период
+    });
+    iv.direct = sum;
+    iv.rate   = sum / iv.days * DAYS_IN_MONTH;            // приведение к месяцу
+  });
+
+  /* --- 4. Прямые в месяц: усреднение по окну --- */
+  const lastDate = snaps[snaps.length - 1].date;
+  const cutoff   = new Date(new Date(lastDate) - windowDays * 86400000).toISOString().slice(0, 10);
+  let wSum = 0, wDays = 0, wFrom = null;
+  intervals.forEach(iv => {
+    if (iv.direct === null) return;
+    if (iv.to < cutoff) return;
+    wSum  += iv.direct;
+    wDays += iv.days;
+    if (!wFrom || iv.from < wFrom) wFrom = iv.from;
+  });
+  const directMonth = wDays > 0 ? wSum / wDays * DAYS_IN_MONTH : 0;
+
+  /* --- 5. Коэффициент продажи --- */
+  // По оплаченному к фактической себестоимости: 8% договоров никогда не будет собрано,
+  // и для оценки денежного потока это надо учесть.
+  const lastSnap = snaps[snaps.length - 1];
+  let sumPays = 0, sumSsFact = 0, sumOrders = 0;
+  liveRows(lastSnap, excl).forEach(r => {
+    sumPays   += toNum(r.СуммаОплат);
+    sumSsFact += toNum(r.ССФакт);
+    sumOrders += toNum(r.СуммаЗаказа);
+  });
+  const coefSale  = sumSsFact > 0 ? sumPays   / sumSsFact : 0;   // контроль 2,093
+  const coefOrder = sumSsFact > 0 ? sumOrders / sumSsFact : 0;   // контроль 2,309
+
+  /* --- 6. Косвенные, доля, порог --- */
+  const dashCoef      = parseFloat(localStorage.getItem('dashCoef') || '0.65') || 0.65;
+  const indirectMonth = directMonth * dashCoef;                  // оценка через коэффициент, не факт
+  const share         = coefSale > 0 ? 1 - 1 / coefSale : 0;     // доля выручки на косвенные
+  const threshold     = share > 0 ? indirectMonth / share : 0;   // порог набора
+
+  /* --- 7. Набор по месяцам --- */
+  const months = new Map();
+  const monthOf = d => monthKey(d);
+  first.forEach((f, num) => {
+    if (f.date === firstDate) return;                            // первичная загрузка — не набор
+    const key = monthOf(f.date);
+    if (!months.has(key)) months.set(key, { key, inflow: 0, count: 0, contracts: [] });
+    const m = months.get(key);
+    const fin = last.get(num);
+    const sum = fin ? fin.sum : 0;
+    m.inflow += sum;
+    m.count  += 1;
+    m.contracts.push({ num, sum, date: f.date });
+  });
+
+  // Прямые и разрывы по месяцам
+  const monthDirect = new Map();
+  intervals.forEach(iv => {
+    const key = monthOf(iv.to);
+    if (!monthDirect.has(key)) monthDirect.set(key, { sum: 0, days: 0, breaks: 0 });
+    const md = monthDirect.get(key);
+    if (iv.break) { md.breaks++; return; }
+    md.sum  += iv.direct || 0;
+    md.days += iv.days;
+  });
+
+  // Полный ряд месяцев без дыр
+  const allKeys = [...new Set([...months.keys(), ...monthDirect.keys()])].sort();
+  const rows = [];
+  if (allKeys.length) {
+    let [y, m] = allKeys[0].split('-').map(Number);
+    const [ey, em] = allKeys[allKeys.length - 1].split('-').map(Number);
+    while (y < ey || (y === ey && m <= em)) {
+      const key = y + '-' + String(m).padStart(2, '0');
+      const mo  = months.get(key)      || { key, inflow: 0, count: 0, contracts: [] };
+      const md  = monthDirect.get(key) || { sum: 0, days: 0, breaks: 0 };
+      const dir = md.days > 0 ? md.sum / md.days * DAYS_IN_MONTH : null;
+      const ind = dir === null ? null : dir * dashCoef;
+      rows.push({
+        key, label: monthLabel(key),
+        count: mo.count, inflow: mo.inflow,
+        contracts: mo.contracts.sort((a, b) => b.sum - a.sum),
+        direct: dir, indirect: ind,
+        share: mo.inflow > 0 && ind !== null ? ind / mo.inflow : null,
+        threshold: ind !== null && share > 0 ? ind / share : threshold,
+        hasBreak: md.breaks > 0,
+        partial: md.days > 0 && md.days < 20
+      });
+      m++; if (m > 12) { m = 1; y++; }
+    }
+  }
+
+  // Последний полный месяц: если снимков после его конца нет — месяц не закрыт
+  const lastFullIdx = (() => {
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const [ry, rm] = rows[i].key.split('-').map(Number);
+      const endOfMonth = new Date(Date.UTC(ry, rm, 0)).toISOString().slice(0, 10);
+      if (lastDate >= endOfMonth) return i;
+    }
+    return rows.length - 1;
+  })();
+
+  // Среднее за 3 последних закрытых месяца
+  const recent = rows.slice(Math.max(0, lastFullIdx - 2), lastFullIdx + 1).filter(r => r.count > 0);
+  const inflowAvg3 = recent.length ? recent.reduce((s, r) => s + r.inflow, 0) / recent.length : 0;
+  const inflowLast = rows[lastFullIdx] ? rows[lastFullIdx].inflow : 0;
+
+  const gap = inflowAvg3 * share - indirectMonth;                // разрыв по текущему темпу
+
+  // Средние по годам (для контроля)
+  const avgRange = (from, to) => {
+    const sel = rows.filter(r => r.key >= from && r.key <= to && r.count > 0);
+    return sel.length ? sel.reduce((s, r) => s + r.inflow, 0) / sel.length : 0;
+  };
+
+  /* --- 8. Сальдо: объём против времени --- */
+  const { bal, ssAbs } = calcTotals(lastSnap.data);
+  const indOld  = ssAbs * (lastSnap.coef ?? dashCoef);
+  const salOld  = bal - ssAbs - indOld;
+  const finish  = directMonth > 0 ? ssAbs / directMonth : null;   // срок доделки, мес
+  const indNew  = finish === null ? null : indirectMonth * finish;
+  const salNew  = indNew === null ? null : bal - ssAbs - indNew;
+
+  return {
+    ok: true,
+    snaps, rows, breaks, intervals, excl,
+    firstDate, lastDate,
+    windowDays, windowFrom: wFrom, windowDays_used: wDays,
+    directMonth, indirectMonth, dashCoef,
+    coefSale, coefOrder, sumPays, sumSsFact, sumOrders,
+    share, threshold, gap,
+    inflowLast, inflowAvg3, lastFullIdx,
+    avg2025: avgRange('2025-03', '2025-12'),
+    avg2026: avgRange('2026-01', '2026-12'),
+    contractsTotal: liveRows(lastSnap, excl).length,
+    saldo: { bal, ssAbs, indOld, salOld, finish, indNew, salNew, coefUsed: lastSnap.coef ?? dashCoef }
+  };
+}
+
+/* ─────────────────────────── РЕНДЕР ─────────────────────────── */
+
+let __inflow = null;
+const __inflowOpen = new Set();     // раскрытые месяцы
+
+function renderInflow() {
+  const coefInput = document.getElementById('inflowCoef');
+  if (coefInput && !coefInput.value) coefInput.value = localStorage.getItem('dashCoef') || '0.65';
+
+  const windowDays = Number(document.getElementById('inflowWindow').value) || 90;
+  const res = computeInflow({ windowDays });
+  __inflow = res;
+
+  const kpi   = document.getElementById('inflowKpi');
+  const meta  = document.getElementById('inflowMeta');
+  const wrap  = document.getElementById('inflowTableWrap');
+
+  if (!res.ok) {
+    kpi.innerHTML = '';
+    wrap.innerHTML = emptyState(res.reason);
+    meta.textContent = '';
+    document.getElementById('inflowControlWrap').innerHTML = '';
+    document.getElementById('inflowSaldoWrap').innerHTML = '';
+    document.getElementById('inflowExclWrap').innerHTML = '';
+    return;
+  }
+
+  meta.textContent = `${res.snaps.length} снимков с ${fmtDate(res.firstDate)} по ${fmtDate(res.lastDate)} · `
+    + `${res.contractsTotal} договоров в реестре после исключений · `
+    + `прямые усреднены за ${res.windowDays_used} дн. с ${res.windowFrom ? fmtDate(res.windowFrom) : '—'} · `
+    + `${res.breaks.length} разрывов ряда`;
+
+  renderInflowKpi(res);
+  renderInflowCoefBox(res);
+  renderInflowTable(res);
+  renderInflowControl(res);
+  renderInflowSaldo(res);
+  renderInflowExcluded(res);
+  drawInflowChart(res);
+}
+
+function renderInflowKpi(res) {
+  const last  = res.rows[res.lastFullIdx];
+  const lbl   = last ? last.label : '—';
+  const below = res.inflowLast < res.threshold;
+  const shareFact = res.inflowAvg3 > 0 ? res.indirectMonth / res.inflowAvg3 : 0;
+  const shareBad  = shareFact > res.share;
+
+  document.getElementById('inflowKpi').innerHTML = `
+    <div>
+      <div class="k-lbl">Набор за последний полный месяц (${lbl})</div>
+      <div class="k-val ${below ? 'k-bad' : 'k-ok'}">${sep(Math.round(res.inflowLast))} ₽</div>
+      <div class="k-sub">порог ${sep(Math.round(res.threshold))} ₽/мес · среднее за 3 месяца ${sep(Math.round(res.inflowAvg3))} ₽<br>
+        2025 (март–декабрь): ${sep(Math.round(res.avg2025))} · 2026: ${sep(Math.round(res.avg2026))} ₽/мес</div>
+    </div>
+    <div>
+      <div class="k-lbl">Косвенные в месяц</div>
+      <div class="k-val">${sep(Math.round(res.indirectMonth))} ₽</div>
+      <div class="k-sub">оценка через коэффициент ${res.dashCoef.toFixed(2)}, не факт<br>
+        прямые ${sep(Math.round(res.directMonth))} ₽/мес за ${res.windowDays_used} дн.</div>
+    </div>
+    <div>
+      <div class="k-lbl">Доля косвенных к набору</div>
+      <div class="k-val ${shareBad ? 'k-bad' : 'k-ok'}">${(shareFact * 100).toFixed(1)} %</div>
+      <div class="k-sub">норма ${(res.share * 100).toFixed(1)} % = 1 − 1/${res.coefSale.toFixed(2)}<br>
+        разрыв при текущем темпе ${res.gap >= 0 ? '+' : ''}${sep(Math.round(res.gap))} ₽/мес</div>
+    </div>`;
+}
+
+function renderInflowCoefBox(res) {
+  document.getElementById('inflowCoefBox').innerHTML = `
+    <div class="tbl-wrap">
+      <div class="tbl-head" style="justify-content:flex-start;gap:24px;flex-wrap:wrap;">
+        <span><b style="font-size:17px;">${res.coefOrder.toFixed(3)}</b> — по сумме договоров</span>
+        <span><b style="font-size:17px;color:var(--acc);">${res.coefSale.toFixed(3)}</b> — по оплаченному</span>
+      </div>
+      <p class="hint" style="margin:0;">3 — по чему продаём. ${res.coefSale.toFixed(2)} — что доходит до кассы.
+        Оплаты ${sep(Math.round(res.sumPays))} ₽ / ССФакт ${sep(Math.round(res.sumSsFact))} ₽ по последнему снимку.
+        Продажники ставят 3 — это цена, делённая на плановую себестоимость; ровно 3,00 выходит там, где план выведен делением цены на три, то есть где расчёта нет.</p>
+    </div>`;
+}
+
+function renderInflowTable(res) {
+  const wrap = document.getElementById('inflowTableWrap');
+  if (!res.rows.length) { wrap.innerHTML = emptyState('Нет месяцев для расчёта.'); return; }
+
+  const head = ['Месяц', 'Договоров', 'Набор ₽', 'Прямые ₽', 'Косвенные ₽', 'Доля', 'Порог ₽', ''];
+  let html = '<table><tr>' + head.map(h => `<th>${h}</th>`).join('') + '</tr>';
+
+  res.rows.forEach((r, i) => {
+    const above = r.count > 0 && r.inflow >= r.threshold;
+    const brkCls = r.hasBreak ? ' inflow-brk' : '';
+    const mark = r.hasBreak ? ' ⚡' : '';
+    html += `<tr class="inflow-mrow${brkCls}" data-m="${r.key}">
+      <td style="text-align:left">${r.label}${mark}</td>
+      <td>${r.count || '—'}</td>
+      <td>${r.inflow ? sep(Math.round(r.inflow)) : '—'}</td>
+      <td>${r.direct === null ? '—' : sep(Math.round(r.direct))}</td>
+      <td>${r.indirect === null ? '—' : sep(Math.round(r.indirect))}</td>
+      <td>${r.share === null ? '—' : (r.share * 100).toFixed(1) + ' %'}</td>
+      <td>${sep(Math.round(r.threshold))}</td>
+      <td class="${r.count === 0 ? '' : (above ? 'cell-ok' : 'cell-bad')}">${r.count === 0 ? '' : (above ? 'выше' : 'ниже')}</td>
+    </tr>`;
+
+    if (__inflowOpen.has(r.key)) {
+      html += `<tr class="inflow-sub-row"><td colspan="8" style="padding:0">
+        ${renderMonthContracts(r)}
+      </td></tr>`;
+    }
+  });
+  html += '</table>';
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll('tr.inflow-mrow').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const k = tr.dataset.m;
+      if (__inflowOpen.has(k)) __inflowOpen.delete(k); else __inflowOpen.add(k);
+      renderInflowTable(res);
+    });
+  });
+  wrap.querySelectorAll('input.inflow-excl').forEach(cb => {
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      const excl = loadExcluded();
+      const num  = cb.dataset.num;
+      if (cb.checked) excl.add(num); else excl.delete(num);
+      saveExcluded(excl);
+      showToast(cb.checked ? `${num} исключён из расчёта` : `${num} возвращён в расчёт`, 'success');
+      renderInflow();
+    });
+  });
+}
+
+function renderMonthContracts(r) {
+  if (!r.contracts.length) return '<p class="empty-state">Ни одного нового договора в этом месяце.</p>';
+  let h = '<table class="inflow-sub" style="margin:0;border:none;"><tr>'
+        + '<th style="text-align:left">Номер</th><th style="text-align:left">Наименование</th><th>Сумма ₽</th><th>Заведён</th><th>Искл.</th></tr>';
+  r.contracts.forEach(c => {
+    const info = getContractInfo(c.num);
+    const stub = c.sum <= 1;
+    h += `<tr>
+      <td class="tl">${c.num}</td>
+      <td class="tl">${info.exists && info.name ? info.name : '<span style="color:var(--t2)">—</span>'}</td>
+      <td${stub ? ' style="color:var(--warn)"' : ''}>${sep(Math.round(c.sum))}${stub ? ' ⚠' : ''}</td>
+      <td>${fmtDate(c.date)}</td>
+      <td><input type="checkbox" class="inflow-excl" data-num="${c.num}"></td>
+    </tr>`;
+  });
+  h += '</table>';
+  return h;
+}
+
+function renderInflowControl(res) {
+  const ratio = res.avg2026 > 0 ? res.avg2025 / res.avg2026 : 0;
+  const items = [
+    ['Набор, среднее март–декабрь 2025', res.avg2025,        18164592, '₽/мес'],
+    ['Набор, среднее январь–июль 2026',  res.avg2026,         8345138, '₽/мес'],
+    ['Отношение',                        ratio,                  2.18, ''],
+    ['Коэффициент продажи',              res.coefSale,          2.093, ''],
+    ['Коэффициент по сумме договоров',   res.coefOrder,         2.309, ''],
+    ['Прямые в месяц',                   res.directMonth,     7941918, '₽'],
+    ['Косвенные в месяц (оценка)',       res.indirectMonth,   5162247, '₽'],
+    ['Доля выручки на косвенные',        res.share * 100,        52.2, '%'],
+    ['Порог набора',                     res.threshold,       9886012, '₽/мес'],
+    ['Разрыв (от среднего 2026)',        res.avg2026 * res.share - res.indirectMonth, -804609, '₽/мес'],
+    ['Договоров после исключений',       res.contractsTotal,      244, '']
+  ];
+  let h = '<table><tr><th style="text-align:left">Показатель</th><th>Расчёт</th><th>Контроль ТЗ</th><th>Δ</th></tr>';
+  items.forEach(([name, got, exp, unit]) => {
+    const d   = exp !== 0 ? (got - exp) / Math.abs(exp) * 100 : 0;
+    const cls = Math.abs(d) <= 1 ? 'cell-ok' : (Math.abs(d) <= 5 ? '' : 'cell-bad');
+    const f   = v => Math.abs(v) >= 1000 ? sep(Math.round(v)) : v.toFixed(3);
+    h += `<tr><td style="text-align:left">${name}</td><td>${f(got)} ${unit}</td><td>${f(exp)} ${unit}</td>`
+       + `<td class="${cls}">${d >= 0 ? '+' : ''}${d.toFixed(1)} %</td></tr>`;
+  });
+  h += '</table>';
+  document.getElementById('inflowControlWrap').innerHTML = h;
+}
+
+function renderInflowSaldo(res) {
+  const s = res.saldo;
+  document.getElementById('inflowSaldoWrap').innerHTML = `
+    <table>
+      <tr><th style="text-align:left">Показатель</th><th>Старая формула (объём)</th><th>Новая (время)</th></tr>
+      <tr><td style="text-align:left">Остаток оплат</td><td>${sep(Math.round(s.bal))}</td><td>${sep(Math.round(s.bal))}</td></tr>
+      <tr><td style="text-align:left">Остаток себестоимости</td><td>${sep(Math.round(s.ssAbs))}</td><td>${sep(Math.round(s.ssAbs))}</td></tr>
+      <tr><td style="text-align:left">Срок доделки, мес</td><td>—</td><td>${s.finish === null ? '—' : s.finish.toFixed(2)}</td></tr>
+      <tr><td style="text-align:left">Косвенные</td><td>${sep(Math.round(s.indOld))}</td><td>${s.indNew === null ? '—' : sep(Math.round(s.indNew))}</td></tr>
+      <tr><td style="text-align:left"><b>Сальдо</b></td>
+          <td class="${s.salOld < 0 ? 'cell-bad' : 'cell-ok'}"><b>${sep(Math.round(s.salOld))}</b></td>
+          <td class="${s.salNew === null ? '' : (s.salNew < 0 ? 'cell-bad' : 'cell-ok')}"><b>${s.salNew === null ? '—' : sep(Math.round(s.salNew))}</b></td></tr>
+    </table>
+    <p class="hint">Старая: Косвенные = Остаток СС × ${s.coefUsed.toFixed(2)}. Новая: Косвенные = ${sep(Math.round(res.indirectMonth))} ₽/мес × срок доделки.
+      Обе совпадают ровно при коэффициенте ${res.directMonth > 0 ? (res.indirectMonth / res.directMonth).toFixed(2) : '—'} — то есть текущее значение неявно утверждает,
+      что цех переваривает ${sep(Math.round(res.directMonth))} ₽/мес. Различие проявится, когда скорость производства изменится: старая формула к ней слепа.</p>`;
+}
+
+function renderInflowExcluded(res) {
+  const wrap = document.getElementById('inflowExclWrap');
+  const list = [...res.excl].sort();
+  if (!list.length) { wrap.innerHTML = emptyState('Исключений нет.'); return; }
+
+  // Сумма исключённых — ищем по последнему снимку, где номер встречался
+  const sums = new Map();
+  res.snaps.forEach(s => s.data.forEach(r => {
+    const n = String(r.Номер || '').trim();
+    if (res.excl.has(n)) sums.set(n, toNum(r.СуммаЗаказа));
+  }));
+  const total = list.reduce((s, n) => s + (sums.get(n) || 0), 0);
+
+  let h = `<table class="inflow-sub"><tr><th style="text-align:left">Номер</th><th style="text-align:left">Наименование</th><th>Сумма ₽</th><th>Вернуть</th></tr>`;
+  list.forEach(n => {
+    const info = getContractInfo(n);
+    h += `<tr><td class="tl">${n}</td><td class="tl">${info.exists && info.name ? info.name : '—'}</td>`
+       + `<td>${sep(Math.round(sums.get(n) || 0))}</td>`
+       + `<td><button class="small inflow-unexcl" data-num="${n}">↩</button></td></tr>`;
+  });
+  h += `<tr><td class="tl"><b>Итого</b></td><td></td><td><b>${sep(Math.round(total))}</b></td><td></td></tr></table>`;
+  wrap.innerHTML = h;
+
+  wrap.querySelectorAll('button.inflow-unexcl').forEach(b => b.addEventListener('click', () => {
+    const excl = loadExcluded();
+    excl.delete(b.dataset.num);
+    saveExcluded(excl);
+    showToast(`${b.dataset.num} возвращён в расчёт`, 'success');
+    renderInflow();
+  }));
+}
+
+/* ─────────────────────────── ГРАФИК ─────────────────────────── */
+
+function drawInflowChart(res) {
+  const c = document.getElementById('inflowChart');
+  if (!c) return;
+  const parent = c.parentElement;
+  const cssW = Math.max(320, parent.clientWidth - 40);
+  const cssH = 360;
+  const ctx  = fitHiDPICanvas(c, cssW, cssH);
+  const W = c.clientWidth, H = c.clientHeight;
+  ctx.clearRect(0, 0, W, H);
+
+  const rows = res.rows.filter(r => r.count > 0 || r.direct !== null);
+  if (rows.length < 2) return;
+
+  const padX = 90, padY = 54, topGap = 26, rightGap = 16;
+  const maxV = Math.max(res.threshold, ...rows.map(r => r.inflow)) * 1.08 || 1;
+  const step = (W - padX - rightGap) / Math.max(1, rows.length - 1);
+  const xOf  = i => padX + i * step;
+  const yOf  = v => H - padY - (v / maxV) * (H - padY - topGap);
+
+  // оси
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padX, topGap); ctx.lineTo(padX, H - padY); ctx.lineTo(W - rightGap, H - padY); ctx.stroke();
+
+  // деления Y
+  ctx.fillStyle = '#666'; ctx.font = '11px DM Sans, sans-serif';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let i = 0; i <= 5; i++) {
+    const y = H - padY - i * (H - padY - topGap) / 5;
+    ctx.beginPath(); ctx.moveTo(padX - 4, y); ctx.lineTo(padX, y); ctx.stroke();
+    ctx.fillText(sep(Math.round(maxV * i / 5)), padX - 8, y);
+  }
+
+  // разрывы ряда — вертикальный пунктир
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = '#E8453A'; ctx.lineWidth = 1;
+  rows.forEach((r, i) => {
+    if (!r.hasBreak) return;
+    ctx.beginPath(); ctx.moveTo(xOf(i), topGap); ctx.lineTo(xOf(i), H - padY); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // порог
+  ctx.setLineDash([8, 5]); ctx.strokeStyle = '#E8453A'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(padX, yOf(res.threshold)); ctx.lineTo(W - rightGap, yOf(res.threshold)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#E8453A'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText('порог ' + sep(Math.round(res.threshold)), padX + 6, yOf(res.threshold) - 4);
+
+  // заливка под линией набора
+  ctx.beginPath();
+  ctx.moveTo(xOf(0), H - padY);
+  rows.forEach((r, i) => ctx.lineTo(xOf(i), yOf(r.inflow)));
+  ctx.lineTo(xOf(rows.length - 1), H - padY); ctx.closePath();
+  ctx.fillStyle = 'rgba(26,122,230,.08)'; ctx.fill();
+
+  // линия набора
+  ctx.strokeStyle = '#1A7AE6'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  rows.forEach((r, i) => { const x = xOf(i), y = yOf(r.inflow); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.stroke();
+
+  // точки + подписи месяцев
+  ctx.textAlign = 'center';
+  rows.forEach((r, i) => {
+    const x = xOf(i), y = yOf(r.inflow);
+    ctx.fillStyle = r.inflow >= res.threshold ? '#2EBD52' : '#E8453A';
+    ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#666'; ctx.textBaseline = 'top';
+    if (rows.length <= 14 || i % 2 === 0) {
+      ctx.save(); ctx.translate(x, H - padY + 8); ctx.rotate(-Math.PI / 4);
+      ctx.textAlign = 'right'; ctx.fillText(r.label, 0, 0); ctx.restore();
+    }
+  });
+
+  // точка пересечения — первый месяц, когда набор ушёл ниже порога и больше не вернулся
+  let crossIdx = -1;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].count > 0 && rows[i].inflow >= res.threshold) { crossIdx = i + 1; break; }
+  }
+  if (crossIdx > 0 && crossIdx < rows.length) {
+    const x = xOf(crossIdx);
+    ctx.strokeStyle = '#E89A0A'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(x, topGap); ctx.lineTo(x, H - padY); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#E89A0A'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('вход перестал покрывать расходы', x + 5, topGap + 2);
+  }
+}
+
+/* ─────────────────────────── CSV ─────────────────────────── */
+
+function exportInflowCsv() {
+  if (!__inflow || !__inflow.ok) { showToast('Нечего выгружать', 'warning'); return; }
+  const lines = ['Месяц;Договоров;Набор;Прямые;Косвенные;Доля;Порог;Выше порога;Разрыв ряда'];
+  __inflow.rows.forEach(r => lines.push([
+    r.label, r.count, Math.round(r.inflow),
+    r.direct === null ? '' : Math.round(r.direct),
+    r.indirect === null ? '' : Math.round(r.indirect),
+    r.share === null ? '' : (r.share * 100).toFixed(1),
+    Math.round(r.threshold),
+    r.count === 0 ? '' : (r.inflow >= r.threshold ? 'да' : 'нет'),
+    r.hasBreak ? 'да' : ''
+  ].join(';')));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = `balans_vhoda_${__inflow.lastDate}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+/* ─────────────────────────── ПРИВЯЗКА ─────────────────────────── */
+
+document.getElementById('btnInflowRefresh').addEventListener('click', () => { renderInflow(); showToast('Пересчитано', 'success'); });
+document.getElementById('btnInflowCsv').addEventListener('click', exportInflowCsv);
+document.getElementById('inflowWindow').addEventListener('change', renderInflow);
+document.getElementById('inflowCoef').addEventListener('change', e => {
+  const v = e.target.value || '0.65';
+  localStorage.setItem('dashCoef', v);
+  const d = document.getElementById('dashCoef');
+  if (d) d.value = v;
+  renderInflow();
+});
+document.getElementById('linkInflow').addEventListener('click', e => { e.preventDefault(); location.hash = '#inflow'; showInflow(); });
+
+// Ставка прямых для альтернативной модели сальдо на Главной.
+// try/catch — модуль объявлен ниже init(), при раннем вызове константы ещё в TDZ.
+function inflowSnapshot() {
+  try {
+    if (__inflow && __inflow.ok) return __inflow;
+    const r = computeInflow({ windowDays: 90 });
+    return r.ok ? r : null;
+  } catch (e) { return null; }
+}
+
+// init() отработал выше, когда константы модуля были ещё в TDZ —
+// перестраиваем историю, чтобы заполнить столбцы модели по времени
+if (store.length) { try { buildHistory(); } catch (e) {} }
+
+if (location.hash === '#inflow') showInflow();
+
 
 /* ════════════════════════════════════════════════════════ PWA ════════════════════════════════════════════════════════════ */
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
