@@ -4,7 +4,7 @@
      кэш используется только офлайн (никакого «залипания» на старой версии)
    - иконки, манифест, шрифты Google: cache-first с докачкой */
 
-const CACHE = 'sverka-v48';
+const CACHE = 'sverka-v49';
 const CORE = [
   './',
   './index.html',
