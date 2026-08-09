@@ -5780,11 +5780,17 @@ document.getElementById('linkInflow').addEventListener('click', e => { e.prevent
 
 // Ставка прямых для альтернативной модели сальдо на Главной.
 // try/catch — модуль объявлен ниже init(), при раннем вызове константы ещё в TDZ.
+let __inflowCache = null, __inflowSig = '';
 function inflowSnapshot() {
   try {
-    if (__inflow && __inflow.ok) return __inflow;
+    // подпись состояния: новый импорт или смена коэффициента сбрасывают кеш
+    const sig = store.length + '|' + (store.length ? store[store.length - 1].date : '') + '|'
+              + (localStorage.getItem('dashCoef') || '');
+    if (__inflowCache && __inflowSig === sig) return __inflowCache;
     const r = computeInflow({ windowDays: 90 });
-    return r.ok ? r : null;
+    __inflowSig = sig;
+    __inflowCache = r.ok ? r : null;
+    return __inflowCache;
   } catch (e) { return null; }
 }
 
