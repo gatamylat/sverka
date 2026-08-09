@@ -5234,40 +5234,94 @@ function liveRows(snap, excl) {
 
 /* ─────────────────────────── ЯДРО РАСЧЁТА ─────────────────────────── */
 
+/* ══════ ПРАВКА 1: опечатки в датах снимков ══════
+   В архиве есть снимок с датой 2026-11-10 — на самом деле это 10.11.2025.
+   Из-за неё он становился последним, конец диапазона уезжал на год вперёд,
+   последним полным месяцем оказывался октябрь 2026, а в нём пусто — отсюда нули. */
+const INFLOW_DATE_FIXES = { '2026-11-10': '2025-11-10' };
+
+function migrateSnapshotDates() {
+  let n = 0;
+  store.forEach(sn => {
+    if (sn && INFLOW_DATE_FIXES[sn.date]) {
+      const was = sn.date;
+      sn.date = INFLOW_DATE_FIXES[was];
+      if (sn.meta && sn.meta.date === was) sn.meta.date = sn.date;
+      console.info('[Вход] дата снимка исправлена:', was, '→', sn.date);
+      n++;
+    }
+  });
+  if (n) save();                                   // разово переписываем localStorage
+  return n;
+}
+
+/* Постоянная защита: дата позже сегодняшней — заведомо опечатка ввода.
+   Такие снимки в расчёт не берём, но из store не удаляем. */
+function validSnapshots() {
+  const today = new Date().toISOString().slice(0, 10);
+  const all = [...store].filter(sn => sn && sn.date && Array.isArray(sn.data));
+  const good = all.filter(sn => sn.date <= today).sort((a, b) => a.date.localeCompare(b.date));
+  const dropped = all.filter(sn => sn.date > today).map(sn => sn.date);
+  return { good, dropped };
+}
+
+/* ══════ ПРАВКА 3: объединённый реестр вместо среза последнего снимка ══════
+   Коэффициент по активным записям последнего снимка — это срез, а не портфель:
+   договоры, выбывшие из выгрузки, уносят с собой свои оплаты и себестоимость.
+   Проходим все снимки по датам и запоминаем последнее известное состояние
+   каждого номера — независимо от __status. */
+function buildRegistry(snaps, excl) {
+  const reg = new Map();
+  snaps.forEach((snap, idx) => {
+    snap.data.forEach(r => {
+      const num = String(r.Номер || '').trim();
+      if (!num || excl.has(num)) return;
+      reg.set(num, {
+        date  : snap.date,
+        idx,
+        sum   : toNum(r.СуммаЗаказа),
+        pays  : toNum(r.СуммаОплат),
+        ssFact: toNum(r.ССФакт)
+      });
+    });
+  });
+  return reg;
+}
+
 function computeInflow(opts) {
   const windowDays = (opts && opts.windowDays) || 90;
   const excl  = loadExcluded();
-  const snaps = [...store].filter(s => s && s.date && Array.isArray(s.data))
-                          .sort((a, b) => a.date.localeCompare(b.date));
 
-  if (snaps.length < 2) return { ok: false, reason: 'Нужно минимум два снимка выгрузки.' };
+  const { good: snaps, dropped } = validSnapshots();
+  if (snaps.length < 3) return { ok: false, reason: 'Нужно минимум три снимка выгрузки: первый — первичная загрузка, он в расчёт не идёт.' };
 
-  /* --- 1. Первое появление и итоговая сумма по каждому договору --- */
-  // Критично: сумма из ПОСЛЕДНЕГО снимка, а не на момент появления.
-  // Договоры заводятся с заглушкой 1 ₽ и получают настоящую цену позже.
-  const first = new Map();   // номер → { date, idx }
-  const last  = new Map();   // номер → { date, sum, ssFact, pays }
-
+  /* --- 1. Первое появление договора и последнее известное состояние --- */
+  // Итоговая сумма берётся из реестра, а не с момента появления:
+  // договоры заводятся с заглушкой 1 ₽ и получают настоящую цену позже.
+  const reg   = buildRegistry(snaps, excl);
+  const first = new Map();                 // номер → { date, idx }
   snaps.forEach((snap, idx) => {
     liveRows(snap, excl).forEach(r => {
       const num = String(r.Номер).trim();
       if (!first.has(num)) first.set(num, { date: snap.date, idx });
-      last.set(num, {
-        date  : snap.date,
-        sum   : toNum(r.СуммаЗаказа),
-        ssFact: toNum(r.ССФакт),
-        pays  : toNum(r.СуммаОплат)
-      });
     });
   });
 
   /* --- 2. Разрывы ряда --- */
   // Если число договоров между соседними снимками меняется больше чем на 30% —
   // снимок помечается разрывом и прирост через него не вычисляется.
-  const counts = snaps.map(s => liveRows(s, excl).length);
-  const breaks = [];                     // индексы снимков-разрывов
-  const intervals = [];                  // корректные интервалы для прироста
-  for (let i = 1; i < snaps.length; i++) {
+  const counts = snaps.map(sn => liveRows(sn, excl).length);
+  const breaks = [];
+  const intervals = [];
+
+  /* ══════ ПРАВКА 2: первый снимок полностью вне расчёта ══════
+     Снимок от 11.02.2025 — первичная загрузка базы: 110 договоров появляются
+     одновременно. Считать их набором нельзя, и их ССФакт нельзя считать
+     приростом «появившихся за период» — иначе февраль получает 275 млн ₽.
+     Поэтому интервалы начинаются со второй пары: первый снимок не служит
+     даже базой сравнения. */
+  const BASE_IDX = 1;                      // первый снимок, участвующий в расчёте
+  for (let i = BASE_IDX + 1; i < snaps.length; i++) {
     const prevN = counts[i - 1] || 1;
     const delta = Math.abs(counts[i] - prevN) / prevN;
     const days  = dayDiff(snaps[i - 1].date, snaps[i].date);
@@ -5276,10 +5330,10 @@ function computeInflow(opts) {
     intervals.push({ i, from: snaps[i - 1].date, to: snaps[i].date, days, break: brk });
   }
 
-  /* --- 3. Прирост прямых затрат по каждому интервалу --- */
+  /* --- 3. Прирост прямых затрат по интервалам --- */
   // Прямые(период) = Σ max(0, ССФакт(конец) − ССФакт(начало)) по общим договорам
-  //                + Σ ССФакт(конец) по появившимся за период
-  const firstDate = snaps[0].date;       // первичная загрузка
+  //                + Σ ССФакт(конец) по договорам, впервые появившимся именно в этом интервале
+  const firstDate = snaps[0].date;         // первичная загрузка
   intervals.forEach(iv => {
     if (iv.break || iv.days <= 0) { iv.direct = null; iv.rate = null; return; }
     const prev = new Map(liveRows(snaps[iv.i - 1], excl).map(r => [String(r.Номер).trim(), toNum(r.ССФакт)]));
@@ -5287,36 +5341,39 @@ function computeInflow(opts) {
     liveRows(snaps[iv.i], excl).forEach(r => {
       const num = String(r.Номер).trim();
       const ss  = toNum(r.ССФакт);
-      if (prev.has(num)) sum += Math.max(0, ss - prev.get(num));
-      else               sum += ss;                       // появился за период
+      if (prev.has(num)) { sum += Math.max(0, ss - prev.get(num)); return; }
+      const f = first.get(num);
+      // полный ССФакт — только у по-настоящему новых. Договор, вернувшийся
+      // в выгрузку после отсутствия, не создаёт прироста заново.
+      if (f && f.idx === iv.i) sum += ss;
     });
     iv.direct = sum;
-    iv.rate   = sum / iv.days * DAYS_IN_MONTH;            // приведение к месяцу
+    iv.rate   = sum / iv.days * DAYS_IN_MONTH;
   });
 
   /* --- 4. Прямые в месяц: усреднение по окну --- */
   const lastDate = snaps[snaps.length - 1].date;
   const cutoff   = new Date(new Date(lastDate) - windowDays * 86400000).toISOString().slice(0, 10);
+  const valid    = intervals.filter(iv => iv.direct !== null);
+  let picked     = valid.filter(iv => iv.to >= cutoff);
+  let windowFallback = false;
+  if (!picked.length) {                    // окно пустое — берём три последних корректных интервала
+    picked = valid.slice(-3);
+    windowFallback = true;
+  }
   let wSum = 0, wDays = 0, wFrom = null;
-  intervals.forEach(iv => {
-    if (iv.direct === null) return;
-    if (iv.to < cutoff) return;
+  picked.forEach(iv => {
     wSum  += iv.direct;
     wDays += iv.days;
     if (!wFrom || iv.from < wFrom) wFrom = iv.from;
   });
   const directMonth = wDays > 0 ? wSum / wDays * DAYS_IN_MONTH : 0;
 
-  /* --- 5. Коэффициент продажи --- */
-  // По оплаченному к фактической себестоимости: 8% договоров никогда не будет собрано,
-  // и для оценки денежного потока это надо учесть.
-  const lastSnap = snaps[snaps.length - 1];
+  /* --- 5. Коэффициент продажи: по реестру, а не по последнему снимку --- */
+  // По оплаченному к фактической себестоимости: часть договоров никогда
+  // не будет собрана, и для оценки денежного потока это надо учесть.
   let sumPays = 0, sumSsFact = 0, sumOrders = 0;
-  liveRows(lastSnap, excl).forEach(r => {
-    sumPays   += toNum(r.СуммаОплат);
-    sumSsFact += toNum(r.ССФакт);
-    sumOrders += toNum(r.СуммаЗаказа);
-  });
+  reg.forEach(c => { sumPays += c.pays; sumSsFact += c.ssFact; sumOrders += c.sum; });
   const coefSale  = sumSsFact > 0 ? sumPays   / sumSsFact : 0;   // контроль 2,093
   const coefOrder = sumSsFact > 0 ? sumOrders / sumSsFact : 0;   // контроль 2,309
 
@@ -5329,12 +5386,14 @@ function computeInflow(opts) {
   /* --- 7. Набор по месяцам --- */
   const months = new Map();
   const monthOf = d => monthKey(d);
+  let skippedInitial = 0;
   first.forEach((f, num) => {
-    if (f.date === firstDate) return;                            // первичная загрузка — не набор
+    // ПРАВКА 2: договоры первичной загрузки набором не считаются
+    if (f.idx <= 0) { skippedInitial++; return; }
     const key = monthOf(f.date);
     if (!months.has(key)) months.set(key, { key, inflow: 0, count: 0, contracts: [] });
     const m = months.get(key);
-    const fin = last.get(num);
+    const fin = reg.get(num);                                    // итоговая сумма из реестра
     const sum = fin ? fin.sum : 0;
     m.inflow += sum;
     m.count  += 1;
@@ -5402,12 +5461,21 @@ function computeInflow(opts) {
   };
 
   /* --- 8. Сальдо: объём против времени --- */
+  const lastSnap = snaps[snaps.length - 1];
   const { bal, ssAbs } = calcTotals(lastSnap.data);
   const indOld  = ssAbs * (lastSnap.coef ?? dashCoef);
   const salOld  = bal - ssAbs - indOld;
   const finish  = directMonth > 0 ? ssAbs / directMonth : null;   // срок доделки, мес
   const indNew  = finish === null ? null : indirectMonth * finish;
   const salNew  = indNew === null ? null : bal - ssAbs - indNew;
+
+  console.info('[Вход] снимков в архиве:', store.length,
+    '| в расчёте:', snaps.length,
+    '| отброшено по будущей дате:', dropped.length ? dropped.join(', ') : '—',
+    '| первый снимок вне расчёта:', firstDate, '(' + skippedInitial + ' договоров первичной загрузки)',
+    '| договоров в реестре:', reg.size, '(исключено ' + excl.size + ')',
+    '| коэффициент', coefSale.toFixed(3), '/ по сумме', coefOrder.toFixed(3),
+    '| прямые', Math.round(directMonth), '₽/мес за', wDays, 'дн.' + (windowFallback ? ' (окно пустое, взяты 3 последних интервала)' : ''));
 
   return {
     ok: true,
@@ -5420,7 +5488,8 @@ function computeInflow(opts) {
     inflowLast, inflowAvg3, lastFullIdx,
     avg2025: avgRange('2025-03', '2025-12'),
     avg2026: avgRange('2026-01', '2026-12'),
-    contractsTotal: liveRows(lastSnap, excl).length,
+    contractsTotal: reg.size,                                    // ПРАВКА 3: портфель, а не срез
+    registry: reg, droppedDates: dropped, skippedInitial, windowFallback,
     saldo: { bal, ssAbs, indOld, salOld, finish, indNew, salNew, coefUsed: lastSnap.coef ?? dashCoef }
   };
 }
@@ -5452,10 +5521,13 @@ function renderInflow() {
     return;
   }
 
-  meta.textContent = `${res.snaps.length} снимков с ${fmtDate(res.firstDate)} по ${fmtDate(res.lastDate)} · `
-    + `${res.contractsTotal} договоров в реестре после исключений · `
-    + `прямые усреднены за ${res.windowDays_used} дн. с ${res.windowFrom ? fmtDate(res.windowFrom) : '—'} · `
-    + `${res.breaks.length} разрывов ряда`;
+  meta.innerHTML = `${res.snaps.length} снимков с ${fmtDate(res.firstDate)} по ${fmtDate(res.lastDate)} · `
+    + `${res.contractsTotal} договоров в реестре после исключений (${res.excl.size}) · `
+    + `прямые усреднены за ${res.windowDays_used} дн. с ${res.windowFrom ? fmtDate(res.windowFrom) : '—'}`
+    + `${res.windowFallback ? ' <b>— окно пустое, взяты три последних интервала</b>' : ''} · `
+    + `${res.breaks.length} разрывов ряда<br>`
+    + `Первый снимок ${fmtDate(res.firstDate)} — первичная загрузка (${res.skippedInitial} договоров), в набор и прирост не входит.`
+    + `${res.droppedDates.length ? ` Отброшено по дате из будущего: ${res.droppedDates.join(', ')}.` : ''}`;
 
   renderInflowKpi(res);
   renderInflowCoefBox(res);
@@ -5794,9 +5866,16 @@ function inflowSnapshot() {
   } catch (e) { return null; }
 }
 
-// init() отработал выше, когда константы модуля были ещё в TDZ —
-// перестраиваем историю, чтобы заполнить столбцы модели по времени
-if (store.length) { try { buildHistory(); } catch (e) {} }
+// ПРАВКА 1: разовая миграция опечаток в датах снимков.
+// init() отработал выше, когда константы модуля были ещё в TDZ,
+// поэтому после миграции перестраиваем архив и историю.
+if (store.length) {
+  try {
+    const fixed = migrateSnapshotDates();
+    if (fixed) { renderArchive(); showToast(`Исправлена дата снимка (${fixed})`, 'warning'); }
+    buildHistory();
+  } catch (e) { console.warn('[Вход] миграция дат не выполнена:', e); }
+}
 
 if (location.hash === '#inflow') showInflow();
 
