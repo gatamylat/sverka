@@ -863,7 +863,10 @@ td.spark-cell canvas{display:block}
       <label>Окно усреднения прямых, дней:
         <input type="number" id="inflowWindow" min="30" max="365" step="15" value="90" style="width:80px;padding:3px 6px;">
       </label>
-      <label style="margin-left:12px;">Коэффициент косвенных:
+      <label style="margin-left:12px;">Косвенные расходы, ₽/мес:
+        <input type="number" id="inflowIndirect" min="0" step="1000" style="width:120px;padding:3px 6px;">
+      </label>
+      <label style="margin-left:12px;">Коэффициент (для сверки):
         <input type="number" id="inflowCoef" min="0" step="0.01" style="width:80px;padding:3px 6px;">
       </label>
       <button id="btnInflowRefresh" class="small" style="margin-left:12px;">Обновить</button>
@@ -2259,7 +2262,7 @@ function calcTotals(rows){
 function buildHistory(){
   const wrap=document.getElementById('tblHist');wrap.innerHTML='';
   const tbl=document.createElement('table');
-  const trh=document.createElement('tr');['Дата','kз','Остаток','Прямые','Косвенные','Сальдо','Косвенные (t)','Сальдо (t)'].forEach(h=>trh.appendChild(Object.assign(document.createElement('th'),{textContent:h})));tbl.appendChild(trh);
+  const trh=document.createElement('tr');['Дата','kз','Остаток','Прямые','Косвенные','Сальдо','Срок, мес','Косвенные (t)','Сальдо (t)'].forEach(h=>trh.appendChild(Object.assign(document.createElement('th'),{textContent:h})));tbl.appendChild(trh);
 
   // Альтернативная модель: косвенные текут по календарю, а не растут с объёмом работ
   const __inf = (typeof inflowSnapshot === 'function') ? inflowSnapshot() : null;
@@ -2295,15 +2298,19 @@ imp.data
     });
     tr.appendChild(tdCoef);
     // Срок доделки = Остаток СС / Прямые(мес); Косвенные = Косвенные(мес) × срок
-    let indT = null, salT = null;
+    let indT = null, salT = null, finishT = null;
     if (__inf && __inf.directMonth > 0) {
-      const finish = ssAbs / __inf.directMonth;
-      indT = __inf.indirectMonth * finish;
+      finishT = ssAbs / __inf.directMonth;              // срок доделки портфеля
+      indT = __inf.indirectMonth * finishT;             // косвенные из настроек, а не Прямые × k
       salT = bal - ssAbs - indT;
     }
     [bal,ssAbs,ind,sal].forEach(v=>{
       const td=document.createElement('td');td.textContent=sep(v);if(v<0)td.classList.add('neg');tr.appendChild(td);
     });
+    const tdF=document.createElement('td');
+    tdF.style.color='var(--t2)';
+    tdF.textContent = (finishT===null) ? '—' : finishT.toFixed(2);
+    tr.appendChild(tdF);
     [indT,salT].forEach(v=>{
       const td=document.createElement('td');
       td.style.color='var(--t2)';
@@ -3145,7 +3152,8 @@ const exportJSON = () => {
         dashCoef: localStorage.getItem('dashCoef') || '0.70',
         pfThreshold: Number(localStorage.getItem(LS_THR) || 0),
         histChecks: JSON.parse(localStorage.getItem(HIST_CHECKS_LS) || '{}'),
-        excluded: JSON.parse(localStorage.getItem('inflowExcludedV1') || '[]')
+        excluded: JSON.parse(localStorage.getItem('inflowExcludedV1') || '[]'),
+        indirectFactMonth: localStorage.getItem('indirectFactMonth') || '5017000'
       }
     }
   };
@@ -3183,6 +3191,7 @@ const importJSON = file => {
           localStorage.setItem(LS_THR, s.pfThreshold || 0);
           localStorage.setItem(HIST_CHECKS_LS, JSON.stringify(s.histChecks || {}));
           if (Array.isArray(s.excluded)) localStorage.setItem('inflowExcludedV1', JSON.stringify(s.excluded));
+          if (s.indirectFactMonth) localStorage.setItem('indirectFactMonth', s.indirectFactMonth);
         }
         
         showToast('✅ Полный импорт завершён: ' + store.length + ' импортов, ' + pfStore.length + ' сверок ПФ', 'success');
@@ -3344,6 +3353,19 @@ function handleImport(){
     reRenderCoefs();drawCoefChart();
     document.getElementById('file').value='';document.getElementById('btnLoad').disabled=true;
     showToast(`✅ Загружено ${rows.length} договоров от ${fmtDate(date)}`, 'success');
+
+    /* Проверка ряда при импорте: падение числа договоров больше чем на 30% —
+       это либо настоящий разрыв ряда, либо опечатка в дате снимка.
+       Именно так «первая загрузка базы» с чужим годом когда-то встала посреди ряда. */
+    if (prev.length) {
+      const wasN = prev.filter(r => r.__status !== 'deleted').length;
+      const drop = wasN ? (wasN - rows.length) / wasN : 0;
+      if (drop > 0.30) {
+        const pct = Math.round(drop * 100);
+        console.warn('[Импорт] падение числа договоров:', wasN, '→', rows.length, '(-' + pct + '%) на дате', date);
+        showToast(`⚠️ Договоров стало меньше на ${pct}% (${wasN} → ${rows.length}). Проверь дату снимка: возможна опечатка в годе.`, 'warning');
+      }
+    }
   };fr.readAsText(file,'utf-8');
 }
 
@@ -5200,6 +5222,19 @@ window.addEventListener('resize', () => {
    Ни новых сущностей, ни ручного ввода, ни внешних файлов. ТЗ v3 от 09.08.2026. */
 
 const INFLOW_EXCL_KEY = 'inflowExcludedV1';
+
+/* ══════ ПРАВКА 4: косвенные расходы — независимая величина ══════
+   Пока Косвенные_мес = Прямые_мес × k, модель по времени алгебраически
+   тождественна старой: Косвенные_мес × ОстатокСС / Прямые_мес = ОстатокСС × k.
+   Прямые сокращаются, и «новая» колонка повторяет старую до копейки.
+   Величина ниже — факт из отчёта «Анализ бизнеса» за январь–июль 2026,
+   а не производная от прямых затрат. */
+const INDIRECT_FACT_KEY     = 'indirectFactMonth';
+const INDIRECT_FACT_DEFAULT = 5017000;
+function loadIndirectFact() {
+  const v = parseFloat(localStorage.getItem(INDIRECT_FACT_KEY));
+  return (isFinite(v) && v > 0) ? v : INDIRECT_FACT_DEFAULT;
+}
 const DAYS_IN_MONTH   = 30.44;
 const BREAK_PCT       = 0.30;   // >30% изменения числа договоров между снимками — разрыв ряда
 
@@ -5238,7 +5273,14 @@ function liveRows(snap, excl) {
    В архиве есть снимок с датой 2026-11-10 — на самом деле это 10.11.2025.
    Из-за неё он становился последним, конец диапазона уезжал на год вперёд,
    последним полным месяцем оказывался октябрь 2026, а в нём пусто — отсюда нули. */
-const INFLOW_DATE_FIXES = { '2026-11-10': '2025-11-10' };
+/* Проверено на данных: после исправления число договоров в начале ряда
+   становится монотонным (88 → 93 → 110 → 115), а разрыв остаётся один — 10.04.2026.
+   Снимок с 88 договорами — не «неполный», а первая загрузка базы с чужим годом. */
+const INFLOW_DATE_FIXES = {
+  '2026-11-10': '2025-11-10',   // ноябрьский снимок записан следующим годом — уезжал конец диапазона
+  '2025-12-19': '2024-12-19',   // 88 договоров: первая загрузка базы, стояла посреди ряда из 220
+  '2025-02-13': '2025-01-13'    // 93 договора: второй снимок ряда
+};
 
 function migrateSnapshotDates() {
   let n = 0;
@@ -5379,7 +5421,9 @@ function computeInflow(opts) {
 
   /* --- 6. Косвенные, доля, порог --- */
   const dashCoef      = parseFloat(localStorage.getItem('dashCoef') || '0.65') || 0.65;
-  const indirectMonth = directMonth * dashCoef;                  // оценка через коэффициент, не факт
+  const indirectEst   = directMonth * dashCoef;                  // оценка через коэффициент — только для сверки
+  const indirectMonth = loadIndirectFact();                      // ПРАВКА 4: факт, не производная от прямых
+  const indirectDelta = indirectEst > 0 ? (indirectMonth - indirectEst) / indirectEst : 0;
   const share         = coefSale > 0 ? 1 - 1 / coefSale : 0;     // доля выручки на косвенные
   const threshold     = share > 0 ? indirectMonth / share : 0;   // порог набора
 
@@ -5422,14 +5466,16 @@ function computeInflow(opts) {
       const mo  = months.get(key)      || { key, inflow: 0, count: 0, contracts: [] };
       const md  = monthDirect.get(key) || { sum: 0, days: 0, breaks: 0 };
       const dir = md.days > 0 ? md.sum / md.days * DAYS_IN_MONTH : null;
-      const ind = dir === null ? null : dir * dashCoef;
+      // Косвенные текут по календарю и постоянны примерно на 94% —
+      // они не зависят от того, сколько цех переварил в этом месяце.
+      const ind = indirectMonth;
       rows.push({
         key, label: monthLabel(key),
         count: mo.count, inflow: mo.inflow,
         contracts: mo.contracts.sort((a, b) => b.sum - a.sum),
         direct: dir, indirect: ind,
-        share: mo.inflow > 0 && ind !== null ? ind / mo.inflow : null,
-        threshold: ind !== null && share > 0 ? ind / share : threshold,
+        share: mo.inflow > 0 ? ind / mo.inflow : null,
+        threshold: threshold,
         hasBreak: md.breaks > 0,
         partial: md.days > 0 && md.days < 20
       });
@@ -5466,6 +5512,7 @@ function computeInflow(opts) {
   const indOld  = ssAbs * (lastSnap.coef ?? dashCoef);
   const salOld  = bal - ssAbs - indOld;
   const finish  = directMonth > 0 ? ssAbs / directMonth : null;   // срок доделки, мес
+  // ПРАВКА 4: косвенные берутся из настроек, поэтому прямые больше не сокращаются
   const indNew  = finish === null ? null : indirectMonth * finish;
   const salNew  = indNew === null ? null : bal - ssAbs - indNew;
 
@@ -5482,11 +5529,11 @@ function computeInflow(opts) {
     snaps, rows, breaks, intervals, excl,
     firstDate, lastDate,
     windowDays, windowFrom: wFrom, windowDays_used: wDays,
-    directMonth, indirectMonth, dashCoef,
+    directMonth, indirectMonth, indirectEst, indirectDelta, dashCoef,
     coefSale, coefOrder, sumPays, sumSsFact, sumOrders,
     share, threshold, gap,
     inflowLast, inflowAvg3, lastFullIdx,
-    avg2025: avgRange('2025-03', '2025-12'),
+    avg2025: avgRange('2025-01', '2025-12'),   // ряд начинается с декабря 2024, январь 2025 полноценный
     avg2026: avgRange('2026-01', '2026-12'),
     contractsTotal: reg.size,                                    // ПРАВКА 3: портфель, а не срез
     registry: reg, droppedDates: dropped, skippedInitial, windowFallback,
@@ -5502,6 +5549,8 @@ const __inflowOpen = new Set();     // раскрытые месяцы
 function renderInflow() {
   const coefInput = document.getElementById('inflowCoef');
   if (coefInput && !coefInput.value) coefInput.value = localStorage.getItem('dashCoef') || '0.65';
+  const indInput = document.getElementById('inflowIndirect');
+  if (indInput && !indInput.value) indInput.value = String(loadIndirectFact());
 
   const windowDays = Number(document.getElementById('inflowWindow').value) || 90;
   const res = computeInflow({ windowDays });
@@ -5550,12 +5599,13 @@ function renderInflowKpi(res) {
       <div class="k-lbl">Набор за последний полный месяц (${lbl})</div>
       <div class="k-val ${below ? 'k-bad' : 'k-ok'}">${sep(Math.round(res.inflowLast))} ₽</div>
       <div class="k-sub">порог ${sep(Math.round(res.threshold))} ₽/мес · среднее за 3 месяца ${sep(Math.round(res.inflowAvg3))} ₽<br>
-        2025 (март–декабрь): ${sep(Math.round(res.avg2025))} · 2026: ${sep(Math.round(res.avg2026))} ₽/мес</div>
+        2025: ${sep(Math.round(res.avg2025))} · 2026: ${sep(Math.round(res.avg2026))} ₽/мес</div>
     </div>
     <div>
       <div class="k-lbl">Косвенные в месяц</div>
       <div class="k-val">${sep(Math.round(res.indirectMonth))} ₽</div>
-      <div class="k-sub">оценка через коэффициент ${res.dashCoef.toFixed(2)}, не факт<br>
+      <div class="k-sub">факт из настроек, задан независимо от прямых<br>
+        оценка через коэффициент ${res.dashCoef.toFixed(2)} дала бы ${sep(Math.round(res.indirectEst))} ₽ (${res.indirectDelta >= 0 ? '+' : ''}${(res.indirectDelta * 100).toFixed(1)} %)<br>
         прямые ${sep(Math.round(res.directMonth))} ₽/мес за ${res.windowDays_used} дн.</div>
     </div>
     <div>
@@ -5652,13 +5702,14 @@ function renderMonthContracts(r) {
 function renderInflowControl(res) {
   const ratio = res.avg2026 > 0 ? res.avg2025 / res.avg2026 : 0;
   const items = [
-    ['Набор, среднее март–декабрь 2025', res.avg2025,        18164592, '₽/мес'],
-    ['Набор, среднее январь–июль 2026',  res.avg2026,         8345138, '₽/мес'],
-    ['Отношение',                        ratio,                  2.18, ''],
+    ['Набор, среднее 2025 (12 мес)',     res.avg2025,        16631106, '₽/мес'],
+    ['Набор, среднее 2026 (7 мес)',      res.avg2026,         8345138, '₽/мес'],
+    ['Отношение',                        ratio,                  1.99, ''],
     ['Коэффициент продажи',              res.coefSale,          2.093, ''],
     ['Коэффициент по сумме договоров',   res.coefOrder,         2.309, ''],
     ['Прямые в месяц',                   res.directMonth,     7941918, '₽'],
-    ['Косвенные в месяц (оценка)',       res.indirectMonth,   5162247, '₽'],
+    ['Косвенные, оценка через коэффициент', res.indirectEst,  5162247, '₽'],
+    ['Косвенные, факт из настроек',      res.indirectMonth,   5017000, '₽'],
     ['Доля выручки на косвенные',        res.share * 100,        52.2, '%'],
     ['Порог набора',                     res.threshold,       9886012, '₽/мес'],
     ['Разрыв (от среднего 2026)',        res.avg2026 * res.share - res.indirectMonth, -804609, '₽/мес'],
@@ -5689,9 +5740,12 @@ function renderInflowSaldo(res) {
           <td class="${s.salOld < 0 ? 'cell-bad' : 'cell-ok'}"><b>${sep(Math.round(s.salOld))}</b></td>
           <td class="${s.salNew === null ? '' : (s.salNew < 0 ? 'cell-bad' : 'cell-ok')}"><b>${s.salNew === null ? '—' : sep(Math.round(s.salNew))}</b></td></tr>
     </table>
-    <p class="hint">Старая: Косвенные = Остаток СС × ${s.coefUsed.toFixed(2)}. Новая: Косвенные = ${sep(Math.round(res.indirectMonth))} ₽/мес × срок доделки.
-      Обе совпадают ровно при коэффициенте ${res.directMonth > 0 ? (res.indirectMonth / res.directMonth).toFixed(2) : '—'} — то есть текущее значение неявно утверждает,
-      что цех переваривает ${sep(Math.round(res.directMonth))} ₽/мес. Различие проявится, когда скорость производства изменится: старая формула к ней слепа.</p>`;
+    <p class="hint">Старая: Косвенные = Остаток СС × ${s.coefUsed.toFixed(2)} — привязка к объёму работ.
+      Новая: Косвенные = ${sep(Math.round(res.indirectMonth))} ₽/мес (факт из настроек) × срок доделки ${s.finish === null ? '—' : s.finish.toFixed(2)} мес — привязка к календарю.
+      Формулы совпали бы, только если брать косвенные как Прямые × k: тогда прямые сокращаются и остаётся Остаток СС × k, то есть старая формула.
+      Сейчас косвенные заданы независимо, расхождение ${s.indNew === null ? '—' : ((s.indNew - s.indOld) / s.indOld * 100).toFixed(1) + ' %'}.
+      Оно всегда равно отношению факта к оценке: ${sep(Math.round(res.indirectMonth))} / (${sep(Math.round(res.directMonth))} × ${s.coefUsed.toFixed(2)}) − 1.
+      Сегодня разница невелика, и ценность новой модели не в ней: старая формула вернёт то же число при любой скорости производства, новая — среагирует на изменение прямых.</p>`;
 }
 
 function renderInflowExcluded(res) {
@@ -5841,6 +5895,12 @@ function exportInflowCsv() {
 document.getElementById('btnInflowRefresh').addEventListener('click', () => { renderInflow(); showToast('Пересчитано', 'success'); });
 document.getElementById('btnInflowCsv').addEventListener('click', exportInflowCsv);
 document.getElementById('inflowWindow').addEventListener('change', renderInflow);
+document.getElementById('inflowIndirect').addEventListener('change', e => {
+  const v = parseFloat(e.target.value);
+  localStorage.setItem(INDIRECT_FACT_KEY, (isFinite(v) && v > 0) ? String(v) : String(INDIRECT_FACT_DEFAULT));
+  renderInflow();
+  if (store.length) { try { buildHistory(); } catch (err) {} }   // столбцы (t) на Главной зависят от этой величины
+});
 document.getElementById('inflowCoef').addEventListener('change', e => {
   const v = e.target.value || '0.65';
   localStorage.setItem('dashCoef', v);
@@ -5857,7 +5917,7 @@ function inflowSnapshot() {
   try {
     // подпись состояния: новый импорт или смена коэффициента сбрасывают кеш
     const sig = store.length + '|' + (store.length ? store[store.length - 1].date : '') + '|'
-              + (localStorage.getItem('dashCoef') || '');
+              + (localStorage.getItem('dashCoef') || '') + '|' + loadIndirectFact();
     if (__inflowCache && __inflowSig === sig) return __inflowCache;
     const r = computeInflow({ windowDays: 90 });
     __inflowSig = sig;
