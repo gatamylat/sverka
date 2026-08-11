@@ -462,6 +462,13 @@ td.col-gray.neg {
 }
 
 /* 3.9 — Баланс входа */
+th.th-tip{cursor:help;text-decoration:underline dotted;text-underline-offset:3px}
+.formula-box{margin-top:10px;padding:12px 14px;border:1px solid var(--brd2);border-radius:10px;background:var(--bg)}
+.formula{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;margin:4px 0;color:var(--t1)}
+.explain{margin-top:14px;padding:12px 14px;border-left:3px solid var(--acc);background:var(--acc-bg);border-radius:0 8px 8px 0;font-size:13px;line-height:1.55;color:var(--t2)}
+.explain b{color:var(--t1)}
+.explain ul{margin:8px 0;padding-left:20px}
+.explain li{margin:4px 0}
 .inflow-kpi{display:flex;gap:14px;flex-wrap:wrap}
 .inflow-kpi > div{flex:1 1 200px;border:1px solid var(--brd2);border-radius:12px;padding:14px 16px;background:var(--bg)}
 .inflow-kpi .k-lbl{font-size:12px;color:var(--t2);margin-bottom:6px}
@@ -5633,8 +5640,19 @@ function renderInflowTable(res) {
   const wrap = document.getElementById('inflowTableWrap');
   if (!res.rows.length) { wrap.innerHTML = emptyState('Нет месяцев для расчёта.'); return; }
 
-  const head = ['Месяц', 'Договоров', 'Набор ₽', 'Прямые ₽', 'Косвенные ₽', 'Доля', 'Порог ₽', ''];
-  let html = '<table><tr>' + head.map(h => `<th>${h}</th>`).join('') + '</tr>';
+  // Подсказки при наведении: откуда берётся каждый столбец
+  const head = [
+    ['Месяц', 'Месяц, в котором номер договора впервые встретился в выгрузке. Первый снимок архива — первичная загрузка базы, его договоры сюда не попадают.'],
+    ['Договоров', 'Сколько новых номеров появилось в этом месяце. Исключённые договоры не считаются.'],
+    ['Набор ₽', 'Сумма этих договоров, взятая из последнего известного состояния каждого, а не с момента появления: договор заводят с заглушкой 1 ₽ и цену проставляют позже.'],
+    ['Прямые ₽', 'Прирост ССФакт между соседними снимками месяца: Σ max(0, ССФакт_конец − ССФакт_начало) плюс полный ССФакт по-настоящему новых договоров. Приведено к 30,44 дня. Через разрыв ряда не считается — там прочерк.'],
+    ['Косвенные ₽', 'Величина из поля «Косвенные расходы, ₽/мес» вверху экрана. Одинакова во всех месяцах: аренда, зарплаты и прочее текут по календарю, а не растут с объёмом цеха.'],
+    ['Доля', 'Косвенные ÷ Набор. Сколько процентов заведённых денег съедают расходы, не привязанные к производству.'],
+    ['Порог ₽', 'Косвенные ÷ (1 − 1/Коэффициент). Столько нужно заводить в месяц, чтобы косвенные окупились. Одинаков во всех месяцах.'],
+    ['', 'Набор выше или ниже порога.']
+  ];
+  let html = '<table><tr>' + head.map(([h, tip]) =>
+    `<th${tip ? ` class="th-tip" title="${tip.replace(/"/g, '&quot;')}"` : ''}>${h}</th>`).join('') + '</tr>';
 
   res.rows.forEach((r, i) => {
     const above = r.count > 0 && r.inflow >= r.threshold;
@@ -5658,6 +5676,17 @@ function renderInflowTable(res) {
     }
   });
   html += '</table>';
+  html += `<div class="explain">
+    <b>Откуда что берётся.</b> Все столбцы посчитаны из архива снимков выгрузки 1С, ручного ввода здесь нет — кроме одного поля «Косвенные расходы» вверху экрана.
+    <ul>
+      <li><b>Месяц и Договоров</b> — программа проходит снимки по датам и запоминает, в каком из них номер договора встретился впервые. Это и есть месяц его появления. Первый снимок архива не в счёт: там вся база загрузилась разом, это не набор.</li>
+      <li><b>Набор</b> — сумма договоров месяца, но взятая из последнего снимка, где номер ещё виден. Так надо, потому что договор заводят с заглушкой 1 ₽, а настоящую цену проставляют через неделю-две. Если считать по моменту появления, свежие месяцы окажутся пустыми.</li>
+      <li><b>Прямые</b> — не из отчёта, а измерены по факту: насколько выросла ССФакт по всем договорам между соседними снимками. Падения не учитываются, у по-настоящему новых договоров берётся весь ССФакт. Результат делится на число дней между снимками и умножается на 30,44 — иначе месяцы с разным числом выгрузок несравнимы. Там, где состав выгрузки скакнул больше чем на 30%, стоит прочерк и значок ⚡: прирост через такой разрыв означал бы, что цех за две недели сделал годовой объём.</li>
+      <li><b>Косвенные</b> — единственное число, введённое руками. Одинаковое во всех месяцах, потому что аренда и зарплаты не зависят от того, сколько цех переварил.</li>
+      <li><b>Доля и Порог</b> — арифметика поверх предыдущих столбцов. Доля показывает, сколько процентов набора уходит на косвенные. Порог отвечает на обратный вопрос: сколько надо завести, чтобы они окупились.</li>
+    </ul>
+    Клик по строке раскрывает договоры месяца. Значок ⚠ у суммы означает заглушку в 1 ₽ — цену ещё не проставили, и набор этого месяца пока занижен.
+  </div>`;
   wrap.innerHTML = html;
 
   wrap.querySelectorAll('tr.inflow-mrow').forEach(tr => {
@@ -5724,28 +5753,76 @@ function renderInflowControl(res) {
        + `<td class="${cls}">${d >= 0 ? '+' : ''}${d.toFixed(1)} %</td></tr>`;
   });
   h += '</table>';
+  h += `<div class="explain">
+    <b>Что это за таблица.</b> Слева — то, что программа посчитала прямо сейчас из архива снимков. В середине — эталон: те же показатели, посчитанные вручную при постановке задачи, по выгрузке на 10.07.2026. Справа — расхождение.
+    Это не бизнес-показатели, а самопроверка арифметики: если алгоритм где-то ошибётся в обработке заглушек, исключений или разрывов ряда, красная строка покажет где.
+    <ul>
+      <li><b>Зелёное, до 1%</b> — сходится, расчёту можно верить.</li>
+      <li><b>Без заливки, 1–5%</b> — допустимо: архив мог пополниться новыми снимками после того, как эталон был посчитан, и средние сдвинулись.</li>
+      <li><b>Красное, больше 5%</b> — что-то поехало. Смотреть надо на строку «Договоров в реестре»: если она не 244, значит часть номеров потерялась или задвоилась, и следом уплывут коэффициенты и весь набор.</li>
+    </ul>
+    Две строки про косвенные намеренно разные. «Оценка через коэффициент» — это Прямые × k, старый способ, оставлен для сверки с ТЗ. «Факт из настроек» — величина из отчёта «Анализ бизнеса», введённая руками; именно она участвует в расчёте порога и сальдо.
+    Расхождение между ними показывает, насколько коэффициент k врёт про реальные расходы.
+  </div>`;
   document.getElementById('inflowControlWrap').innerHTML = h;
 }
 
 function renderInflowSaldo(res) {
   const s = res.saldo;
-  document.getElementById('inflowSaldoWrap').innerHTML = `
+  const f = v => sep(Math.round(v));
+  const wrap = document.getElementById('inflowSaldoWrap');
+
+  wrap.innerHTML = `
     <table>
-      <tr><th style="text-align:left">Показатель</th><th>Старая формула (объём)</th><th>Новая (время)</th></tr>
-      <tr><td style="text-align:left">Остаток оплат</td><td>${sep(Math.round(s.bal))}</td><td>${sep(Math.round(s.bal))}</td></tr>
-      <tr><td style="text-align:left">Остаток себестоимости</td><td>${sep(Math.round(s.ssAbs))}</td><td>${sep(Math.round(s.ssAbs))}</td></tr>
+      <tr><th style="text-align:left">Показатель</th>
+          <th class="th-tip" id="thSaldoOld">Старая формула (объём) ⓘ</th>
+          <th class="th-tip" id="thSaldoNew">Новая (время) ⓘ</th></tr>
+      <tr><td style="text-align:left">Остаток оплат</td><td>${f(s.bal)}</td><td>${f(s.bal)}</td></tr>
+      <tr><td style="text-align:left">Остаток себестоимости</td><td>${f(s.ssAbs)}</td><td>${f(s.ssAbs)}</td></tr>
       <tr><td style="text-align:left">Срок доделки, мес</td><td>—</td><td>${s.finish === null ? '—' : s.finish.toFixed(2)}</td></tr>
-      <tr><td style="text-align:left">Косвенные</td><td>${sep(Math.round(s.indOld))}</td><td>${s.indNew === null ? '—' : sep(Math.round(s.indNew))}</td></tr>
+      <tr><td style="text-align:left">Косвенные</td><td>${f(s.indOld)}</td><td>${s.indNew === null ? '—' : f(s.indNew)}</td></tr>
       <tr><td style="text-align:left"><b>Сальдо</b></td>
-          <td class="${s.salOld < 0 ? 'cell-bad' : 'cell-ok'}"><b>${sep(Math.round(s.salOld))}</b></td>
-          <td class="${s.salNew === null ? '' : (s.salNew < 0 ? 'cell-bad' : 'cell-ok')}"><b>${s.salNew === null ? '—' : sep(Math.round(s.salNew))}</b></td></tr>
+          <td class="${s.salOld < 0 ? 'cell-bad' : 'cell-ok'}"><b>${f(s.salOld)}</b></td>
+          <td class="${s.salNew === null ? '' : (s.salNew < 0 ? 'cell-bad' : 'cell-ok')}"><b>${s.salNew === null ? '—' : f(s.salNew)}</b></td></tr>
     </table>
-    <p class="hint">Старая: Косвенные = Остаток СС × ${s.coefUsed.toFixed(2)} — привязка к объёму работ.
-      Новая: Косвенные = ${sep(Math.round(res.indirectMonth))} ₽/мес (факт из настроек) × срок доделки ${s.finish === null ? '—' : s.finish.toFixed(2)} мес — привязка к календарю.
-      Формулы совпали бы, только если брать косвенные как Прямые × k: тогда прямые сокращаются и остаётся Остаток СС × k, то есть старая формула.
-      Сейчас косвенные заданы независимо, расхождение ${s.indNew === null ? '—' : ((s.indNew - s.indOld) / s.indOld * 100).toFixed(1) + ' %'}.
-      Оно всегда равно отношению факта к оценке: ${sep(Math.round(res.indirectMonth))} / (${sep(Math.round(res.directMonth))} × ${s.coefUsed.toFixed(2)}) − 1.
-      Сегодня разница невелика, и ценность новой модели не в ней: старая формула вернёт то же число при любой скорости производства, новая — среагирует на изменение прямых.</p>`;
+    <p class="hint">Клик по заголовку колонки — развернуть формулу с подставленными числами.</p>
+    <div id="saldoFormulaOld" class="formula-box" style="display:none">
+      <b>Старая формула: косвенные привязаны к объёму работ</b>
+      <div class="formula">Косвенные = Остаток СС × k</div>
+      <div class="formula">${f(s.ssAbs)} × ${s.coefUsed.toFixed(2)} = ${f(s.indOld)}</div>
+      <div class="formula">Сальдо = Остаток оплат − Остаток СС − Косвенные</div>
+      <div class="formula">${f(s.bal)} − ${f(s.ssAbs)} − ${f(s.indOld)} = ${f(s.salOld)}</div>
+      <p class="hint" style="margin:8px 0 0">k — коэффициент из архива снимка (${s.coefUsed.toFixed(2)}). Формула говорит: чем больше работы осталось, тем больше косвенных расходов.
+      Скорость производства в неё не входит вообще: если цех встанет на полгода, число не изменится.</p>
+    </div>
+    <div id="saldoFormulaNew" class="formula-box" style="display:none">
+      <b>Новая формула: косвенные привязаны к календарю</b>
+      <div class="formula">Срок доделки = Остаток СС ÷ Прямые в месяц</div>
+      <div class="formula">${f(s.ssAbs)} ÷ ${f(res.directMonth)} = ${s.finish === null ? '—' : s.finish.toFixed(2)} мес</div>
+      <div class="formula">Косвенные = Косвенные в месяц × Срок доделки</div>
+      <div class="formula">${f(res.indirectMonth)} × ${s.finish === null ? '—' : s.finish.toFixed(2)} = ${s.indNew === null ? '—' : f(s.indNew)}</div>
+      <div class="formula">Сальдо = Остаток оплат − Остаток СС − Косвенные</div>
+      <div class="formula">${f(s.bal)} − ${f(s.ssAbs)} − ${s.indNew === null ? '—' : f(s.indNew)} = ${s.salNew === null ? '—' : f(s.salNew)}</div>
+      <p class="hint" style="margin:8px 0 0">Логика: пока портфель доделывается, контора платит аренду и зарплаты. Сколько месяцев доделывать — столько раз и заплатит.
+      Прямые в месяц (${f(res.directMonth)}) измерены по приросту ССФакт, косвенные (${f(res.indirectMonth)}) взяты из поля вверху экрана.</p>
+    </div>
+
+    <div class="explain">
+      <b>Зачем две колонки.</b> Старая формула отвечает на вопрос «сколько работы осталось», новая — «сколько времени это займёт и сколько мы за это время проедим».
+      Расхождение сегодня ${s.indNew === null ? '—' : ((s.indNew - s.indOld) / s.indOld * 100).toFixed(1) + ' %'}, и оно всегда равно
+      ${f(res.indirectMonth)} ÷ (${f(res.directMonth)} × ${s.coefUsed.toFixed(2)}) − 1 — остаток себестоимости в этом отношении сокращается.
+      Поэтому смотреть надо не на сегодняшнюю разницу, а на поведение: измени окно усреднения прямых вверху экрана — «Сальдо (t)» поедет, а старое «Сальдо» не шелохнётся.
+      Если когда-нибудь косвенные снова начнут считать как Прямые × k, колонки схлопнутся в одну: прямые сократятся и останется Остаток СС × k.
+    </div>`;
+
+  const tie = (thId, boxId) => {
+    const th = document.getElementById(thId), box = document.getElementById(boxId);
+    if (th && box) th.addEventListener('click', () => {
+      box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    });
+  };
+  tie('thSaldoOld', 'saldoFormulaOld');
+  tie('thSaldoNew', 'saldoFormulaNew');
 }
 
 function renderInflowExcluded(res) {
