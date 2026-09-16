@@ -81,6 +81,27 @@
     /* одинаковая ширина графиков */
     .fixed-chart { width: 1000px; max-width: 100%; }
 
+    /* --- график «История импортов»: масштаб + подсказка при наведении --- */
+    .chart-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--t2)}
+    .chart-ctl .zoom-btn{padding:3px 12px;border-radius:100px;font-size:12px;background:var(--srf);color:var(--t1);border:1.5px solid var(--brd2)}
+    .chart-ctl .zoom-btn:hover{border-color:var(--acc)}
+    .chart-ctl .zoom-btn.active{background:var(--acc);border-color:var(--acc);color:#fff}
+    .chart-ctl input[type=range]{flex:1 1 180px;max-width:340px;min-width:120px;accent-color:var(--acc)}
+    .chart-ctl input[type=range]:disabled{opacity:.35}
+    .chart-ctl__range{margin-left:auto;white-space:nowrap;font-variant-numeric:tabular-nums}
+    #chartWrap{position:relative}
+    #chartWrap canvas{cursor:crosshair}
+    .chart-tip{position:absolute;z-index:5;pointer-events:none;padding:8px 10px;border-radius:10px;
+      border:1px solid var(--brd2);background:rgba(255,255,255,.97);box-shadow:0 8px 20px rgba(30,25,10,.14);
+      font-size:12px;line-height:1.55;color:var(--t1)}
+    .chart-tip[hidden]{display:none}
+    .chart-tip__date{font-weight:600;margin-bottom:3px}
+    .chart-tip__row{display:flex;align-items:center;gap:8px;white-space:nowrap;border-radius:4px;padding:0 4px;margin:0 -4px}
+    .chart-tip__row.is-near{background:var(--acc-bg)}
+    .chart-tip__key{flex:none;width:14px;height:3px;border-radius:2px}
+    .chart-tip__name{color:var(--t2)}
+    .chart-tip__val{margin-left:auto;padding-left:14px;font-weight:600;font-variant-numeric:tabular-nums}
+
     /* legend */
     .legend{list-style:none;padding:0;margin:0;display:flex;gap:16px;font-size:13px}
     .legend li{display:flex;align-items:center;gap:4px}
@@ -711,7 +732,8 @@ td.spark-cell canvas{display:block}
 <!-- history -->
 <div class="card">
   <h2>История импортов (итоги)</h2>
-  <p class="hint">Сводные показатели по каждому импорту и динамика по каждому показателю на графике.</p>
+  <p class="hint">Сводные показатели по каждому импорту и динамика по каждому показателю на графике.
+     Наведите курсор на график (или коснитесь на телефоне) — покажет значения за выбранную дату; кнопки «Масштаб» приближают последние выгрузки.</p>
 
   <!-- toggles -->
   <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:6px">
@@ -751,7 +773,22 @@ td.spark-cell canvas{display:block}
 
 
   <div id="tblHist"></div>
-  <canvas id="canvas" width="1000" height="360"></canvas>
+
+  <!-- масштаб графика: сколько выгрузок показывать и с какого места -->
+  <div class="chart-ctl" id="chartCtl">
+    <span>Масштаб:</span>
+    <button type="button" class="zoom-btn" data-zoom="0">Все</button>
+    <button type="button" class="zoom-btn" data-zoom="30">30</button>
+    <button type="button" class="zoom-btn" data-zoom="20">20</button>
+    <button type="button" class="zoom-btn" data-zoom="10">10</button>
+    <input type="range" id="chartPan" min="0" max="0" value="0" step="1" title="Сдвиг по датам" aria-label="Сдвиг по датам">
+    <span class="chart-ctl__range" id="chartRangeLbl"></span>
+  </div>
+
+  <div id="chartWrap">
+    <canvas id="canvas" width="1000" height="360"></canvas>
+    <div class="chart-tip" id="chartTip" hidden></div>
+  </div>
 </div>
 
 <!-- ПАНЕЛЬ ИСТОРИИ -->
@@ -2384,6 +2421,45 @@ function fitHiDPICanvas(canvas, cssWidth, cssHeight) {
 
 
 /* -------------- chart drawing with multi-series & zero line -------------- */
+
+// Серии графика «История импортов (итоги)». Цвет совпадает с квадратиком чекбокса.
+const SERIES_META = {
+  bal: { name: 'Остаток',        color: '#2EBD52' },
+  dir: { name: 'Прямые',         color: '#E89A0A' },
+  ind: { name: 'Косвенные',      color: '#A855C7' },
+  sal: { name: 'Сальдо',         color: '#1A7AE6' },
+  ssb: { name: 'СС (план/пред)', color: '#06f432' },
+  ssf: { name: 'СС факт',        color: '#f805bb' },
+};
+const SERIES = Object.keys(SERIES_META);
+const CHART_FONT = "11px 'DM Sans', system-ui, sans-serif";
+
+// Масштаб графика: count = 0 → все выгрузки; pinEnd — держаться правого края
+const chartView = { count: 0, start: 0, pinEnd: true };
+let chartHover = -1;     // индекс подсвеченной точки (в полном массиве)
+let chartGeom  = null;   // геометрия последней отрисовки — нужна для наведения мышью
+
+// «Круглые» деления по оси Y вместо сырых min/max
+function niceTicks(lo, hi, want = 5) {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return { min: 0, max: 1, step: 1 };
+  if (lo === hi) { const d = Math.abs(lo) || 1; lo -= d / 2; hi += d / 2; }
+  const raw = (hi - lo) / want;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n   = raw / mag;
+  const step = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * mag;
+  return { min: Math.floor(lo / step) * step, max: Math.ceil(hi / step) * step, step };
+}
+
+// Короткая подпись для оси: 64 902 649 → «64,9 млн»
+function fmtShort(v) {
+  const a = Math.abs(v);
+  if (a >= 1e6) return (v / 1e6).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' млн';
+  if (a >= 1e3) return Math.round(v / 1e3).toLocaleString('ru-RU') + ' тыс';
+  return String(Math.round(v));
+}
+
+const chartNum = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
 function drawChart(arr){
   // Канва графика на ГЛАВНОЙ (История импортов (итоги))
   const c = document.getElementById('canvas');
@@ -2395,111 +2471,310 @@ function drawChart(arr){
 
   // HiDPI-подгонка: внутр. размер умножается на DPR, рисуем в CSS-пикселях
   const ctx = fitHiDPICanvas(c, cssWidth, cssHeight);
+  const W = cssWidth, H = cssHeight;
 
-  // Размеры для ВСЕХ расчётов — только CSS-пиксели
-  const W = c.clientWidth;
-  const H = c.clientHeight;
-
-  // Очистка и ранний выход
   ctx.clearRect(0, 0, W, H);
-  if (!arr.length) return;
+  ctx.font = CHART_FONT;
+  chartGeom = null;
+
+  if (!arr.length) { updateChartControls(arr, 0, 0); return; }
+
+  /* ---- видимое окно (масштаб) ---- */
+  const total = arr.length;
+  const count = chartView.count > 0 ? Math.min(chartView.count, total) : total;
+  const maxStart = total - count;
+  chartView.start = chartView.pinEnd ? maxStart : Math.max(0, Math.min(chartView.start, maxStart));
+  const start = chartView.start;
+  const view  = arr.slice(start, start + count);
+  updateChartControls(arr, start, count);
 
   // Какие серии показываем (чекбоксы под таблицей)
-  const checks = document.querySelectorAll('.chk');
-// добавили ssb и ssf — будут совпадать с data-s у новых чекбоксов
-const show = { bal:false, dir:false, ind:false, sal:false, ssb:false, ssf:false };
-checks.forEach(ch => show[ch.dataset.s] = ch.checked);
-
-// если ни одна из 6 серий не выбрана — выходим
-if (!show.bal && !show.dir && !show.ind && !show.sal && !show.ssb && !show.ssf) return;
-
+  const show = {};
+  document.querySelectorAll('.chk').forEach(ch => show[ch.dataset.s] = ch.checked);
+  const active = SERIES.filter(s => show[s]);
+  if (!active.length) return;
 
   // Параметры поля/осей
-  const padX = 90, padY = 50, topGap = 30, rightGap = 10;
+  const padX = 78, padY = 46, topGap = 26, rightGap = 34;   // справа — место под последнюю дату
+  const plotW = W - padX - rightGap;
+  const plotH = H - padY - topGap;
 
-  // Цвета серий (как были)
-  const colors = {
-  bal:'#2EBD52',   // Остаток
-  dir:'#E89A0A',   // Прямые
-  ind:'#A855C7',   // Косвенные
-  sal:'#1A7AE6',   // Сальдо
-  ssb:'#06f432',   // СС (план/пред) — цвет соответствует чекбоксу
-  ssf:'#f805bb',   // СС факт — цвет соответствует чекбоксу
-};
+  /* ---- диапазон Y считаем ТОЛЬКО по видимым точкам: масштаб меняется и по вертикали ---- */
+  let lo = Infinity, hi = -Infinity;
+  view.forEach(o => active.forEach(s => {
+    const v = chartNum(o[s]);
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }));
+  const ticks = niceTicks(lo, hi, 5);
+  const min = ticks.min, rng = (ticks.max - ticks.min) || 1;
 
-// добавили новые серии; всё остальное (подписи осей, точки, подписи) работает как раньше
-const series = ['bal','dir','ind','sal','ssb','ssf'];
+  const yOf = v => topGap + plotH - ((v - min) / rng) * plotH;
+  const step = count > 1 ? plotW / (count - 1) : 0;
+  const xOf = i => count > 1 ? padX + i * step : padX + plotW / 2;
 
-  const active = series.filter(s => show[s]);
+  /* ---- сетка и деления Y ---- */
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let v = ticks.min; v <= ticks.max + ticks.step / 2; v += ticks.step) {
+    const y = Math.round(yOf(v)) + .5;
+    ctx.strokeStyle = 'rgba(40,35,20,.07)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padX, y); ctx.lineTo(W - rightGap, y); ctx.stroke();
+    ctx.fillStyle = '#8A8985';
+    ctx.fillText(fmtShort(v), padX - 8, y);
+  }
 
-  // Диапазоны и шаг по X
-  const mins = active.map(s => Math.min(...arr.map(o => o[s])));
-  const maxs = active.map(s => Math.max(...arr.map(o => o[s])));
-  const min = Math.min(...mins), max = Math.max(...maxs), rng = max - min || 1;
-
-  const step = (W - padX - rightGap) / Math.max(1, (arr.length - 1));
-
-  /* Оси */
-  ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
+  /* ---- оси ---- */
+  ctx.strokeStyle = '#C4C3BE'; ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(padX, topGap);
-  ctx.lineTo(padX, H - padY);
-  ctx.lineTo(W - rightGap, H - padY);
+  ctx.moveTo(padX, topGap); ctx.lineTo(padX, H - padY); ctx.lineTo(W - rightGap, H - padY);
   ctx.stroke();
 
-  /* Нулевая пунктирная линия */
-  if (min < 0 && max > 0) {
-    const y0 = H - padY - ((0 - min) / rng) * (H - padY - topGap);
-    ctx.setLineDash([6,4]);
-    ctx.strokeStyle = '#f88';
-    ctx.beginPath();
-    ctx.moveTo(padX, y0);
-    ctx.lineTo(W - rightGap, y0);
-    ctx.stroke();
+  /* ---- нулевая пунктирная линия ---- */
+  if (ticks.min < 0 && ticks.max > 0) {
+    const y0 = yOf(0);
+    ctx.setLineDash([6, 4]); ctx.strokeStyle = '#f88';
+    ctx.beginPath(); ctx.moveTo(padX, y0); ctx.lineTo(W - rightGap, y0); ctx.stroke();
     ctx.setLineDash([]);
   }
 
-  /* Деления Y */
-  ctx.fillStyle = '#666'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-  for (let i = 0; i <= 5; i++) {
-    const y = H - padY - i * (H - padY - topGap) / 5;
-    const val = min + i * rng / 5;
-    ctx.beginPath(); ctx.moveTo(padX - 4, y); ctx.lineTo(padX, y); ctx.stroke();
-    ctx.fillText(sep(val.toFixed(0)), padX - 8, y);
+  /* ---- метки X: прореживаем, чтобы даты не наезжали друг на друга ---- */
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = '#8A8985';
+  const every = step > 0 ? Math.max(1, Math.ceil(72 / step)) : 1;   // ширина даты ~58px + воздух
+  ctx.strokeStyle = '#C4C3BE';
+  for (let i = count - 1; i >= 0; i -= every) {   // идём от конца: последняя дата подписана всегда
+    const x = xOf(i);
+    ctx.beginPath(); ctx.moveTo(x, H - padY); ctx.lineTo(x, H - padY + 4); ctx.stroke();
+    // последняя дата иначе обрезается краем канвы — прижимаем её к правому краю
+    const half = ctx.measureText(view[i].date).width / 2;
+    if (x + half > W - 2) { ctx.textAlign = 'right'; ctx.fillText(view[i].date, W - 2, H - padY + 7); ctx.textAlign = 'center'; }
+    else ctx.fillText(view[i].date, x, H - padY + 7);
   }
 
-  /* Деления и метки X (даты) */
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  arr.forEach((o, i) => {
-    const x = padX + i * step;
-    ctx.beginPath(); ctx.moveTo(x, H - padY); ctx.lineTo(x, H - padY + 4); ctx.stroke();
-    ctx.fillText(o.date, x, H - padY + 6);
-  });
-
-  /* Рисуем активные серии */
+  /* ---- серии ---- */
+  const dotR = step >= 16 ? 3 : 2;
   active.forEach(s => {
-    ctx.strokeStyle = colors[s];
-    ctx.lineWidth = 2;
-
-    // Линия
+    const col = SERIES_META[s].color;
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = 'round';
     ctx.beginPath();
-    arr.forEach((o, i) => {
-      const x = padX + i * step;
-      const y = H - padY - ((o[s] - min) / rng) * (H - padY - topGap);
+    view.forEach((o, i) => {
+      const x = xOf(i), y = yOf(chartNum(o[s]));
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
 
-    // Точки + подписи значений
-    ctx.fillStyle = colors[s];
-    arr.forEach((o, i) => {
-      const x = padX + i * step;
-      const y = H - padY - ((o[s] - min) / rng) * (H - padY - topGap);
-      ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.fillText(sep(Math.round(o[s])), x + 6, y - 10);
+    ctx.fillStyle = col;
+    view.forEach((o, i) => {
+      ctx.beginPath(); ctx.arc(xOf(i), yOf(chartNum(o[s])), dotR, 0, Math.PI * 2); ctx.fill();
     });
   });
+
+  /* ---- подписи значений ----
+     Числа у каждой точки рисуем только когда они физически влезают: меряем
+     самую длинную подпись в окне и сравниваем с шагом по X. На плотном графике
+     (55 выгрузок) подписана только последняя выгрузка, остальные значения
+     даёт таблица выше и подсказка при наведении.                            */
+  let widest = '';
+  view.forEach(o => active.forEach(s => {
+    const txt = sep(Math.round(chartNum(o[s])));
+    if (txt.length > widest.length) widest = txt;
+  }));
+  const roomy = step >= ctx.measureText(widest).width + 14;
+
+  // подпись с белой подложкой — иначе цифры теряются на линиях и сетке
+  const label = (text, x, y, color) => {
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.lineJoin = 'round';
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = color; ctx.fillText(text, x, y);
+  };
+
+  // разводим подписи по вертикали, чтобы они не наезжали друг на друга
+  const spread = (list, top, bottom, gap = 13) => {
+    list.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < list.length; i++) {
+      if (list[i].y - list[i - 1].y < gap) list[i].y = list[i - 1].y + gap;
+    }
+    if (list.length && list[list.length - 1].y > bottom) {     // упёрлись в низ — двигаем стопку вверх
+      list[list.length - 1].y = bottom;
+      for (let i = list.length - 2; i >= 0; i--) {
+        if (list[i + 1].y - list[i].y < gap) list[i].y = list[i + 1].y - gap;
+      }
+    }
+    list.forEach(t => { t.y = Math.max(top, t.y); });
+    return list;
+  };
+
+  const valueAt = (i, s) => ({
+    y: yOf(chartNum(view[i][s])),
+    text: sep(Math.round(chartNum(view[i][s]))),
+    color: SERIES_META[s].color,
+  });
+
+  ctx.textBaseline = 'middle';
+  const top = topGap + 7, bottom = H - padY - 7;
+  if (roomy) {
+    ctx.textAlign = 'center';
+    for (let i = 0; i < count; i++) {
+      const col = spread(active.map(s => { const v = valueAt(i, s); v.y -= 11; return v; }), top, bottom);
+      col.forEach(t => label(t.text, xOf(i), t.y, t.color));
+    }
+  } else {
+    const last = count - 1;
+    ctx.textAlign = 'right';
+    spread(active.map(s => valueAt(last, s)), top, bottom)
+      .forEach(t => label(t.text, xOf(last) - 7, t.y, t.color));
+  }
+
+  /* ---- геометрия для наведения мышью ---- */
+  chartGeom = {
+    start, count, W, H, padX, padY, topGap, rightGap, step, view, active,
+    xs: view.map((_, i) => xOf(i)),
+    ys: Object.fromEntries(active.map(s => [s, view.map(o => yOf(chartNum(o[s])))])),
+  };
+
+  /* ---- подсветка точки под курсором ---- */
+  const hv = chartHover - start;
+  if (hv >= 0 && hv < count) {
+    const x = xOf(hv);
+    ctx.save();
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(40,35,20,.35)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, topGap); ctx.lineTo(x, H - padY); ctx.stroke();
+    ctx.restore();
+    active.forEach(s => {
+      const y = yOf(chartNum(view[hv][s]));
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = SERIES_META[s].color; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
+    });
+  }
 }
+
+/* ---------- масштаб графика: кнопки + ползунок ---------- */
+function updateChartControls(arr, start, count) {
+  const ctl = document.getElementById('chartCtl');
+  if (!ctl) return;
+  ctl.querySelectorAll('.zoom-btn').forEach(b => {
+    const z = Number(b.dataset.zoom) || 0;
+    b.classList.toggle('active', z === chartView.count);
+    b.disabled = z > 0 && z >= arr.length;   // пресет крупнее, чем всего выгрузок
+  });
+  const pan = document.getElementById('chartPan');
+  const maxStart = Math.max(0, arr.length - count);
+  pan.max = String(maxStart);
+  pan.value = String(Math.min(start, maxStart));
+  pan.disabled = maxStart === 0;
+  const lbl = document.getElementById('chartRangeLbl');
+  lbl.textContent = count
+    ? `${arr[start].date} — ${arr[start + count - 1].date}  ·  ${count} из ${arr.length}`
+    : '';
+}
+
+function redrawHistoryChart() {
+  if (window.__lastHistoryData) drawChart(window.__lastHistoryData);
+}
+
+document.querySelectorAll('#chartCtl .zoom-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    chartView.count  = Number(b.dataset.zoom) || 0;
+    chartView.pinEnd = true;        // при смене масштаба показываем последние выгрузки
+    hideChartTip();
+    redrawHistoryChart();
+  });
+});
+
+document.getElementById('chartPan').addEventListener('input', e => {
+  chartView.start  = Number(e.target.value) || 0;
+  chartView.pinEnd = false;
+  hideChartTip();
+  redrawHistoryChart();
+});
+
+/* ---------- подсказка при наведении на точку ---------- */
+const chartTipEl = document.getElementById('chartTip');
+let chartRaf = 0;
+
+function scheduleChartRedraw() {
+  if (chartRaf) return;
+  chartRaf = requestAnimationFrame(() => { chartRaf = 0; redrawHistoryChart(); });
+}
+
+function hideChartTip() {
+  if (chartTipEl) chartTipEl.hidden = true;
+  if (chartHover !== -1) { chartHover = -1; scheduleChartRedraw(); }
+}
+
+// Ближайшая по X точка: целиться нужно в дату, а не в двухпиксельную линию
+function chartIndexAt(px) {
+  if (!chartGeom || !chartGeom.xs.length) return -1;
+  let best = -1, bestD = Infinity;
+  chartGeom.xs.forEach((x, i) => { const d = Math.abs(x - px); if (d < bestD) { bestD = d; best = i; } });
+  return best;
+}
+
+function showChartTip(i, py) {
+  const g = chartGeom, o = g.view[i], cnv = document.getElementById('canvas');
+
+  // ближайшая к курсору серия — подсветим её строку
+  let near = null, nearD = Infinity;
+  g.active.forEach(s => { const d = Math.abs(g.ys[s][i] - py); if (d < nearD) { nearD = d; near = s; } });
+
+  chartTipEl.textContent = '';
+  const head = document.createElement('div');
+  head.className = 'chart-tip__date';
+  head.textContent = o.date;
+  chartTipEl.appendChild(head);
+
+  g.active.forEach(s => {
+    const v = chartNum(o[s]);
+    const row = document.createElement('div');
+    row.className = 'chart-tip__row' + (s === near && nearD <= 24 ? ' is-near' : '');
+    const key = document.createElement('span');
+    key.className = 'chart-tip__key';
+    key.style.background = SERIES_META[s].color;
+    const nm = document.createElement('span');
+    nm.className = 'chart-tip__name';
+    nm.textContent = SERIES_META[s].name;
+    const val = document.createElement('span');
+    val.className = 'chart-tip__val';
+    val.textContent = sep(Math.round(v));
+    if (v < 0) val.style.color = 'var(--danger)';
+    row.append(key, nm, val);
+    chartTipEl.appendChild(row);
+  });
+
+  chartTipEl.hidden = false;
+
+  // позиция: рядом с точкой, с переворотом у правого края карточки
+  const ox = cnv.offsetLeft, oy = cnv.offsetTop;
+  const wrapW = chartTipEl.parentElement.clientWidth;
+  const tw = chartTipEl.offsetWidth, th = chartTipEl.offsetHeight;
+  let left = ox + g.xs[i] + 16;
+  if (left + tw > wrapW - 4) left = ox + g.xs[i] - tw - 16;
+  chartTipEl.style.left = Math.max(4, left) + 'px';
+  chartTipEl.style.top  = Math.max(4, Math.min(oy + py - th / 2, oy + g.H - th - 4)) + 'px';
+}
+
+(function initChartHover(){
+  const cnv = document.getElementById('canvas');
+  if (!cnv) return;
+
+  const onPoint = e => {
+    if (!chartGeom) return;
+    const px = e.offsetX, py = e.offsetY;
+    const g = chartGeom;
+    const inside = px >= g.padX - 14 && px <= g.W - g.rightGap + 14 && py <= g.H - g.padY + 14;
+    if (!inside) { hideChartTip(); return; }
+
+    const i = chartIndexAt(px);
+    if (i < 0) { hideChartTip(); return; }
+    if (g.start + i !== chartHover) { chartHover = g.start + i; scheduleChartRedraw(); }
+    showChartTip(i, py);
+  };
+
+  cnv.addEventListener('pointermove', onPoint);
+  cnv.addEventListener('pointerdown', onPoint);   // на телефоне — по касанию
+  cnv.addEventListener('pointerleave', hideChartTip);
+  cnv.addEventListener('pointercancel', hideChartTip);
+})();
 
 
 /* ════════════════════════════════════════════════════════ DOMAIN ═════════════════════════════════════════════════════════ */
