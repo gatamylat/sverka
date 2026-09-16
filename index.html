@@ -1937,6 +1937,11 @@ const FIELDS = [
   'ОстатокСС'
 ];
 
+// Высота диаграммы на экране "История" (CSS-пиксели).
+// Задаётся явно: брать её из самой канвы нельзя — размер стал бы зависеть
+// от самого себя и «уезжал» бы при каждой перерисовке.
+const HIST_CHART_H = 180;
+
 /* ==== Память чекбоксов для вкладки История ==== */
 const HIST_CHECKS_LS = 'histChecksV1';
 
@@ -2107,7 +2112,13 @@ function drawHistChart() {
   const c = histChart;
   const parent = c.parentElement;
   const cssWidth  = Math.max(320, parent ? parent.clientWidth - 40 : 600);
-  const cssHeight = c.clientHeight || 300;
+  // Высота — от размера области, а НЕ от текущей высоты канвы,
+  // иначе каждая перерисовка отсчитывалась бы от предыдущей и график сжимался.
+  const box = c.closest('main');
+  const avail = box ? box.clientHeight : 0;
+  const cssHeight = avail
+    ? Math.max(120, Math.min(HIST_CHART_H, Math.round(avail * 0.45)))
+    : HIST_CHART_H;
   const ctx = fitHiDPICanvas(c, cssWidth, cssHeight);
   ctx.clearRect(0, 0, cssWidth, cssHeight);
   if (!rows.length) return;
@@ -2353,6 +2364,11 @@ save();
 // Подгоняет канву под ширину карточки + HiDPI (чёткая отрисовка)
 function fitHiDPICanvas(canvas, cssWidth, cssHeight) {
   const dpr = Math.max(1, window.devicePixelRatio || 1);
+  // У канвы есть рамка 1px, а глобально включён box-sizing:border-box —
+  // тогда заданные width/height считаются вместе с рамкой и реальная область
+  // рисования выходит на 2px меньше запрошенной. Явный content-box делает
+  // clientWidth/clientHeight равными тому, что мы задали.
+  canvas.style.boxSizing = 'content-box';
   // Визуальный (CSS) размер — сколько пикселей занимает на экране
   canvas.style.width  = cssWidth + 'px';
   canvas.style.height = cssHeight + 'px';
@@ -3031,7 +3047,7 @@ function drawCoefChart() {
   const c = document.getElementById('coefChart');
   const parent = c.parentElement;
   const cssWidth  = Math.max(320, parent ? parent.clientWidth - 40 : 600);
-  const cssHeight = c.clientHeight || 300;
+  const cssHeight = 360;   // фиксируем: c.clientHeight сжимал бы график при каждом открытии вкладки
   const ctx = fitHiDPICanvas(c, cssWidth, cssHeight);
   ctx.clearRect(0, 0, cssWidth, cssHeight);
 
