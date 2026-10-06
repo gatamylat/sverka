@@ -565,6 +565,18 @@ body { padding-top: 70px; }
 .ch-legend{display:flex;gap:16px;font-size:12.5px;color:var(--t2);margin:8px 0 2px}
 .ch-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
 #chTableWrap td.pos{color:var(--ok);font-weight:600}
+.ch-insights{margin:4px 0;padding-left:20px}
+.ch-insights li{margin:7px 0;font-size:14px;line-height:1.5}
+.ch-insights b{letter-spacing:-.2px}
+.ch-insights .up{color:var(--ok)} .ch-insights .down{color:var(--danger)}
+#chTableWrap tr.ch-mrow{cursor:pointer}
+#chTableWrap tr.ch-mrow:hover td{background:var(--acc-bg)}
+#chTableWrap tr.ch-detail td{background:var(--bg);font-size:12px;text-align:left;padding:8px 12px}
+#chTableWrap .ch-item{display:flex;gap:8px;padding:2px 0;align-items:baseline}
+#chTableWrap .ch-item .n{min-width:92px;font-weight:600}
+#chTableWrap .ch-item .nm{color:var(--t2);flex:1}
+#chTableWrap .ch-item .tag{font-size:10px;border-radius:100px;padding:1px 7px;color:#fff;background:#1A7AE6}
+#chTableWrap .ch-item .tag.ind{background:#A68960}
 #chTableWrap td.negv{color:var(--danger);font-weight:600}
 .risk-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:13px;background:rgba(40,35,20,.04);margin-right:8px;margin-bottom:6px;cursor:pointer;user-select:none;border:1.5px solid transparent;transition:all .15s var(--ease)}
 .risk-chip:active{transform:scale(.98)}
@@ -983,19 +995,39 @@ td.spark-cell canvas{display:block}
     <h2>🛒 Каналы продаж</h2>
     <p class="hint">Вход новых договоров по каналам: <b>прямые</b> — прямые заказчики компании (флаг «Прямой» в Справочнике), <b>посредник</b> — остальные.
       Считается по первому появлению договора в архиве; первичная загрузка и исключённые договоры не входят. Разметка каналов правится в Справочнике — вкладка пересчитается сама.</p>
-    <div style="margin:6px 0">
+    <div style="margin:6px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="ai-period" id="chPeriod">
+        <button data-mode="yoy" class="active">Год к году</button>
+        <button data-mode="m12">12 мес</button>
+        <button data-mode="m6">6 мес</button>
+        <button data-mode="m3">3 мес</button>
+        <button data-mode="all">Всё время</button>
+      </div>
       <button id="btnChannelsRefresh" class="small">Обновить</button>
-      <button id="btnChannelsCsv" class="small" style="margin-left:8px">CSV ⬳</button>
+      <button id="btnChannelsCsv" class="small">CSV ⬳</button>
     </div>
     <div id="chKpi" class="ch-kpi"></div>
     <div id="chMeta" class="hint"></div>
   </div>
 
   <div class="card">
+    <h3 style="margin-top:0">Выводы по данным</h3>
+    <ul id="chInsights" class="ch-insights"></ul>
+  </div>
+
+  <div class="card">
     <h3 style="margin-top:0">Вход по месяцам</h3>
-    <div class="ch-legend"><span><i style="background:#1A7AE6"></i>Прямые</span><span><i style="background:#A68960"></i>Непрямые</span></div>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div class="ch-legend"><span><i style="background:#1A7AE6"></i>Прямые</span><span><i style="background:#A68960"></i>Непрямые</span></div>
+      <div class="ai-period" id="chScale" style="margin-left:auto">
+        <button data-n="12">12</button>
+        <button data-n="24" class="active">24</button>
+        <button data-n="999">Все</button>
+      </div>
+    </div>
     <canvas id="chChart" width="1000" height="260"></canvas>
-    <div id="chTableWrap" style="margin-top:14px"></div>
+    <p class="hint" style="margin-top:8px">Клик по строке месяца — список договоров этого месяца.</p>
+    <div id="chTableWrap" style="margin-top:6px"></div>
   </div>
 
   <div class="card">
@@ -3927,12 +3959,16 @@ document.getElementById('btnExport').parentElement.insertBefore(btnExportLegacy,
 
 /* ════════════════════════════════════════════════════════ ROUTER ═════════════════════════════════════════════════════════ */
 /* ════════════════════════════════════════════════════════ КАНАЛЫ ═════════════════════════════════════════════════════════ */
-/* Вход новых договоров по каналам: прямые (флаг в Справочнике) против посредника.
-   Первое появление договора в архиве; первичная загрузка и исключённые — вне набора. */
+/* Вход новых договоров по каналам: прямые (флаг в Справочнике) против непрямых.
+   Первое появление договора в архиве; первичная загрузка и исключённые — вне набора.
+   Интерактив: период сравнения, масштаб графика, раскрытие месяца, автовыводы. */
+
+let chMode = 'yoy';      // yoy | m12 | m6 | m3 | all
+let chScaleN = 24;       // месяцев на графике
+const chOpenMonths = new Set();
 
 function computeChannels(){
   if (store.length < 2) return { ok:false, reason:'Нужно минимум два импорта — загрузите CSV на главной' };
-  // исключения читаем напрямую: модуль Входа объявлен ниже, при раннем вызове его константы ещё в TDZ
   let __exclArr = null;
   try { __exclArr = JSON.parse(localStorage.getItem('inflowExcludedV1') || 'null'); } catch(e){}
   const excl = new Set(__exclArr || ['24-04-01','24-04-02','22-03-25','25-23-02','25-31-01','26-03-01-01','24-09-02','24-30-02']);
@@ -3949,31 +3985,119 @@ function computeChannels(){
       if (!n || seen.has(n)) return;
       seen.add(n);
       const sum = toNum(r.СуммаЗаказа);
-      if (!months.has(key)) months.set(key, { key, ds:0, dn:0, ss:0, sn:0 });
+      if (!months.has(key)) months.set(key, { key, ds:0, dn:0, ss:0, sn:0, list:[] });
       const b = months.get(key);
-      if (isDirectContract(n)){ b.ds += sum; b.dn++; directLog.push({ num:n, date:snaps[i].date, sum }); }
+      const dir = isDirectContract(n);
+      if (dir){ b.ds += sum; b.dn++; directLog.push({ num:n, date:snaps[i].date, sum }); }
       else { b.ss += sum; b.sn++; }
+      b.list.push({ num:n, sum, dir });
     });
   }
   const rows = [...months.values()].sort((a, b) => a.key < b.key ? -1 : 1);
   if (!rows.length) return { ok:false, reason:'Новых договоров в архиве пока нет' };
 
-  // сопоставимые периоды: текущий год против прошлого, по последний ЗАКРЫТЫЙ месяц
+  // последний ЗАКРЫТЫЙ месяц
   const lastDate = snaps[snaps.length - 1].date;
-  const curY = Number(lastDate.slice(0, 4));
-  let mTo = Number(lastDate.slice(5, 7));
-  const endOfMonth = new Date(Date.UTC(curY, mTo, 0)).toISOString().slice(0, 10);
-  if (lastDate < endOfMonth) mTo -= 1;                       // текущий месяц не закрыт — не сравниваем
-  const aggr = (y, upTo) => rows.reduce((a, r) => {
-    const yy = +r.key.slice(0, 4), mm = +r.key.slice(5);
-    if (yy === y && mm <= upTo){ a.ds += r.ds; a.dn += r.dn; a.ss += r.ss; a.sn += r.sn; }
-    return a;
-  }, { ds:0, dn:0, ss:0, sn:0 });
-  const cur  = aggr(curY, mTo);
-  const prev = aggr(curY - 1, mTo);
-  const markedDirect = Object.values(contractsDirectory).filter(i => i && i.direct).length;
+  const ly = Number(lastDate.slice(0, 4));
+  let lm = Number(lastDate.slice(5, 7));
+  const eom = new Date(Date.UTC(ly, lm, 0)).toISOString().slice(0, 10);
+  if (lastDate < eom) lm -= 1;
+  let cy = ly;
+  if (lm === 0){ cy -= 1; lm = 12; }
+  const lastClosed = cy + '-' + String(lm).padStart(2, '0');
 
-  return { ok:true, rows, directLog: directLog.slice(-10).reverse(), cur, prev, curY, mTo, markedDirect, lastDate };
+  // непрерывная шкала закрытых месяцев от первого месяца ряда
+  const firstKey = rows[0].key;
+  const allKeys = [];
+  { let y = +firstKey.slice(0,4), m = +firstKey.slice(5);
+    while (true){
+      const k = y + '-' + String(m).padStart(2,'0');
+      if (k > lastClosed) break;
+      allKeys.push(k);
+      m++; if (m > 12){ m = 1; y++; }
+    } }
+  const byKey = k => months.get(k) || { key:k, ds:0, dn:0, ss:0, sn:0, list:[] };
+  const closedRows = allKeys.map(byKey);
+
+  // окна сравнения по режиму
+  const sumW = keys => keys.reduce((a, k) => { const b = byKey(k);
+    a.ds += b.ds; a.dn += b.dn; a.ss += b.ss; a.sn += b.sn; return a; }, { ds:0, dn:0, ss:0, sn:0, n: keys.length });
+  let curKeys = [], prevKeys = [], label = '', prevLabel = '';
+  const mm = k => k.slice(5) + '.' + k.slice(2, 4);
+  if (chMode === 'yoy'){
+    curKeys  = allKeys.filter(k => k.slice(0,4) == cy && +k.slice(5) <= lm);
+    prevKeys = curKeys.map(k => (cy - 1) + k.slice(4)).filter(k => allKeys.includes(k));
+    label = 'янв–' + String(lm).padStart(2,'0') + '.' + cy; prevLabel = 'тот же период ' + (cy - 1);
+  } else if (chMode === 'all'){
+    curKeys = allKeys; prevKeys = [];
+    label = 'весь период ' + mm(allKeys[0]) + '–' + mm(lastClosed); prevLabel = '';
+  } else {
+    const n = { m12:12, m6:6, m3:3 }[chMode];
+    curKeys  = allKeys.slice(-n);
+    prevKeys = allKeys.slice(-2*n, -n);
+    label = 'последние ' + n + ' мес (' + mm(curKeys[0]) + '–' + mm(lastClosed) + ')';
+    prevLabel = prevKeys.length ? 'предыдущие ' + prevKeys.length + ' мес' : '';
+  }
+  const cur = sumW(curKeys), prev = sumW(prevKeys);
+
+  return { ok:true, rows: closedRows, rowsAll: rows, byKey, directLog: directLog.slice(-10).reverse(),
+           cur, prev, label, prevLabel, lastClosed, allKeys,
+           markedDirect: Object.values(contractsDirectory).filter(i => i && i.direct).length, lastDate };
+}
+
+/* ── автовыводы: считаются из ряда, формулировки нейтральные ── */
+function chBuildInsights(res){
+  const out = [];
+  const K = res.allKeys, byKey = res.byKey;
+  const avg = (keys, f) => keys.length ? keys.reduce((s, k) => s + f(byKey(k)), 0) / keys.length : 0;
+  const M = v => (v / 1e6).toFixed(1);
+  const last3 = K.slice(-3), prevYearKeys = K.filter(k => +k.slice(0,4) === (+res.lastClosed.slice(0,4) - 1));
+  const base = prevYearKeys.length >= 3 ? prevYearKeys : K.slice(0, Math.max(3, K.length - 3));
+
+  // 1. темп последних 3 мес против базы, по каналам
+  const d3 = avg(last3, b => b.ds), dB = avg(base, b => b.ds);
+  const s3 = avg(last3, b => b.ss), sB = avg(base, b => b.ss);
+  const arrow = (a, b) => a >= b ? '<span class="up">▲</span>' : '<span class="down">▼</span>';
+  out.push(`Темп за последние 3 мес: прямые <b>${M(d3)} млн/мес</b> ${arrow(d3,dB)} (база ${M(dB)}), непрямые <b>${M(s3)} млн/мес</b> ${arrow(s3,sB)} (база ${M(sB)}).`);
+
+  // 2. доля прямых во входе
+  const shNow = (d3 + s3) > 0 ? d3 / (d3 + s3) * 100 : 0;
+  const shBase = (dB + sB) > 0 ? dB / (dB + sB) * 100 : 0;
+  out.push(`Доля прямых во входе: <b>${shNow.toFixed(0)}%</b> сейчас против ${shBase.toFixed(0)}% в базовом периоде.`);
+
+  // 3. нулевые серии за последние 12 закрытых месяцев
+  const streak = f => { let best = 0, cur = 0, from = '', bestFrom = '', bestTo = '';
+    K.slice(-12).forEach(k => { const v = f(byKey(k));
+      if (v <= 1){ // заходы-заглушки на 1 ₽ паузу не прерывают
+        if (!cur) from = k; cur++; if (cur > best){ best = cur; bestFrom = from; bestTo = k; } }
+      else cur = 0; });
+    return { best, bestFrom, bestTo }; };
+  const mm = k => k ? k.slice(5) + '.' + k.slice(2,4) : '';
+  const zd = streak(b => b.ds), zs = streak(b => b.ss);
+  if (zd.best >= 2) out.push(`Прямые: самая длинная пауза за год — <b>${zd.best} мес подряд</b> без заходов (${mm(zd.bestFrom)}–${mm(zd.bestTo)}).`);
+  if (zs.best >= 2) out.push(`Непрямые: пауза <b>${zs.best} мес подряд</b> (${mm(zs.bestFrom)}–${mm(zs.bestTo)}).`);
+
+  // 4. средний размер договора по каналам (период против базы)
+  const chk = (keys, sf, nf) => { const s = keys.reduce((a,k)=>a+sf(byKey(k)),0), n = keys.reduce((a,k)=>a+nf(byKey(k)),0); return n ? s/n/1e6 : 0; };
+  const cs = chk(K.slice(-6), b=>b.ss, b=>b.sn), csB = chk(base, b=>b.ss, b=>b.sn);
+  if (cs && csB) out.push(`Средний договор непрямых: <b>${cs.toFixed(2)} млн</b> за полгода против ${csB.toFixed(2)} млн в базе — ${cs > csB*1.3 ? 'крупных стало больше, мелкие уходят' : cs < csB/1.3 ? 'сделки мельчают' : 'размер стабилен'}.`);
+
+  // 5. суммарный вход против порога безубыточности (если модуль Входа доступен)
+  let thresholdShown = false;
+  try {
+    const inf = inflowSnapshot();
+    if (inf && inf.threshold > 0){
+      thresholdShown = true;
+      const tot3 = d3 + s3, gap = tot3 - inf.threshold;
+      out.push(`Суммарный вход <b>${M(tot3)} млн/мес</b> против порога <b>${M(inf.threshold)} млн/мес</b>: ${gap >= 0 ? '<span class="up">запас +' : '<span class="down">дефицит '}${M(Math.abs(gap))} млн/мес</span>.`);
+      const sMax = Math.max(...K.map(k => byKey(k).ss));
+      const sAvgAll = avg(K, b => b.ss);
+      if (sAvgAll < inf.threshold) out.push(`Непрямые в одиночку порог не покрывали никогда: средний вход канала <b>${M(sAvgAll)} млн/мес</b> (лучший месяц ${M(sMax)}) при пороге ${M(inf.threshold)} — разницу всегда закрывали прямые.`);
+    }
+  } catch(e){}
+
+  out.__thresholdShown = thresholdShown;
+  return out;
 }
 
 function renderChannels(){
@@ -3981,38 +4105,46 @@ function renderChannels(){
   const meta = document.getElementById('chMeta');
   const wrap = document.getElementById('chTableWrap');
   const rec  = document.getElementById('chRecent');
+  const ins  = document.getElementById('chInsights');
   const res  = computeChannels();
   if (!res.ok){
-    kpi.innerHTML = ''; wrap.innerHTML = emptyState(res.reason); meta.textContent = ''; rec.innerHTML = '';
+    kpi.innerHTML = ''; wrap.innerHTML = emptyState(res.reason); meta.textContent = ''; rec.innerHTML = ''; ins.innerHTML = '';
     return;
   }
-  const { rows, cur, prev, curY, mTo } = res;
+  const { cur, prev } = res;
   const M = v => sep(Math.round(v / 1e3) * 1e3);
   const pct = (a, b) => b > 0 ? ((a / b - 1) * 100).toFixed(0) + '%' : '—';
-  const dropTotal = (prev.ds + prev.ss) - (cur.ds + cur.ss);
-  const shareD = dropTotal > 0 ? ((prev.ds - cur.ds) / dropTotal * 100).toFixed(0) : '—';
-  const shareS = dropTotal > 0 ? ((prev.ss - cur.ss) / dropTotal * 100).toFixed(0) : '—';
+  const hasPrev = res.prevLabel && (prev.ds + prev.ss) > 0;
+  const dropTotal = hasPrev ? (prev.ds + prev.ss) - (cur.ds + cur.ss) : 0;
+  const shareD = dropTotal > 0 ? ((prev.ds - cur.ds) / dropTotal * 100).toFixed(0) : null;
+  const shareS = dropTotal > 0 ? ((prev.ss - cur.ss) / dropTotal * 100).toFixed(0) : null;
 
   kpi.innerHTML = `
-    <div class="chbox"><b>${M(cur.ds)} ₽</b><div class="sub">Прямые, янв–${String(mTo).padStart(2,'0')}.${curY} • ${cur.dn} дог.<br>
-      год назад ${M(prev.ds)} (${prev.dn} дог.) • ${pct(cur.ds, prev.ds)}</div></div>
-    <div class="chbox"><b>${M(cur.ss)} ₽</b><div class="sub">Непрямые, янв–${String(mTo).padStart(2,'0')}.${curY} • ${cur.sn} дог.<br>
-      год назад ${M(prev.ss)} (${prev.sn} дог.) • ${pct(cur.ss, prev.ss)}</div></div>
-    ${dropTotal > 0 ? `<div class="chbox warn"><b>−${M(dropTotal)} ₽</b><div class="sub">падение входа к прошлому году<br>
-      вклад: прямые ${shareD}% • непрямые ${shareS}%</div></div>` : ''}
-    <div class="chbox"><b>${cur.sn ? (cur.ss / cur.sn / 1e6).toFixed(2) : '—'} млн</b><div class="sub">средний чек непрямых<br>
-      год назад ${prev.sn ? (prev.ss / prev.sn / 1e6).toFixed(2) : '—'} млн</div></div>`;
+    <div class="chbox"><b>${M(cur.ds)} ₽</b><div class="sub">Прямые, ${res.label} • ${cur.dn} дог.${hasPrev ? `<br>${res.prevLabel}: ${M(prev.ds)} (${prev.dn} дог.) • ${pct(cur.ds, prev.ds)}` : ''}</div></div>
+    <div class="chbox"><b>${M(cur.ss)} ₽</b><div class="sub">Непрямые, ${res.label} • ${cur.sn} дог.${hasPrev ? `<br>${res.prevLabel}: ${M(prev.ss)} (${prev.sn} дог.) • ${pct(cur.ss, prev.ss)}` : ''}</div></div>
+    ${dropTotal > 0 ? `<div class="chbox warn"><b>−${M(dropTotal)} ₽</b><div class="sub">изменение входа к базе<br>вклад: прямые ${shareD}% • непрямые ${shareS}%</div></div>`
+      : hasPrev ? `<div class="chbox"><b style="color:var(--ok)">+${M(-dropTotal)} ₽</b><div class="sub">рост входа к базе</div></div>` : ''}
+    <div class="chbox"><b>${cur.sn ? (cur.ss / cur.sn / 1e6).toFixed(2) : '—'} млн</b><div class="sub">средний договор непрямых${hasPrev && prev.sn ? `<br>${res.prevLabel}: ${(prev.ss / prev.sn / 1e6).toFixed(2)} млн` : ''}</div></div>`;
 
-  meta.textContent = `Сравнение по последний закрытый месяц (${String(mTo).padStart(2,'0')}.${curY}). Прямых в справочнике помечено: ${res.markedDirect}.`;
+  meta.textContent = `Ряд с ${res.allKeys[0]} по ${res.lastClosed} (закрытые месяцы). Прямых в справочнике помечено: ${res.markedDirect}.`;
 
-  // таблица помесячно (последние 24 месяца) + годовые итоги
-  const tail = rows.slice(-24);
+  const insights = chBuildInsights(res);
+  ins.innerHTML = insights.map(t => `<li>${t}</li>`).join('');
+  // при открытии сразу по #channels модуль Входа ещё не объявлен — дорисуем вывод о пороге одним отложенным проходом
+  if (!insights.__thresholdShown && !renderChannels.__retried){
+    renderChannels.__retried = true;
+    setTimeout(renderChannels, 0);
+  }
+
+  // таблица: закрытые месяцы периода графика + раскрытие
+  const shown = res.rows.slice(-chScaleN);
   const tbl = document.createElement('table');
   const trh = document.createElement('tr');
   ['Месяц','Прямые','шт','Непрямые','шт','Всего'].forEach(h => trh.appendChild(Object.assign(document.createElement('th'), { textContent: h })));
   tbl.appendChild(trh);
-  tail.forEach((r, i) => {
+  shown.forEach((r, i) => {
     const tr = document.createElement('tr');
+    tr.className = 'ch-mrow';
     if (i % 2) tr.style.background = 'rgba(40,35,20,.03)';
     [r.key, sep(Math.round(r.ds)), r.dn, sep(Math.round(r.ss)), r.sn, sep(Math.round(r.ds + r.ss))].forEach((v, j) => {
       const td = document.createElement('td');
@@ -4021,13 +4153,33 @@ function renderChannels(){
       tr.appendChild(td);
     });
     tbl.appendChild(tr);
+    const det = document.createElement('tr');
+    det.className = 'ch-detail';
+    det.style.display = chOpenMonths.has(r.key) ? '' : 'none';
+    const td = document.createElement('td');
+    td.colSpan = 6;
+    if (r.list.length){
+      r.list.sort((a,b) => b.sum - a.sum).forEach(it => {
+        const info = getContractInfo(it.num);
+        const d = document.createElement('div');
+        d.className = 'ch-item';
+        d.innerHTML = `<span class="n">${it.num}</span><span class="tag${it.dir ? '' : ' ind'}">${it.dir ? 'прямой' : 'непрямой'}</span><span class="nm"></span><span>${sep(Math.round(it.sum))}</span>`;
+        d.querySelector('.nm').textContent = info.exists ? (info.name || '') : '';
+        td.appendChild(d);
+      });
+    } else td.textContent = 'Заходов в этом месяце не было.';
+    det.appendChild(td);
+    tbl.appendChild(det);
+    tr.addEventListener('click', () => {
+      if (chOpenMonths.has(r.key)) chOpenMonths.delete(r.key); else chOpenMonths.add(r.key);
+      det.style.display = chOpenMonths.has(r.key) ? '' : 'none';
+    });
   });
   wrap.innerHTML = '';
   wrap.appendChild(tbl);
 
-  drawChannelsChart(tail);
+  drawChannelsChart(shown);
 
-  // последние заходы прямых
   if (res.directLog.length){
     const t2 = document.createElement('table');
     const h2 = document.createElement('tr');
@@ -4046,9 +4198,7 @@ function renderChannels(){
     });
     rec.innerHTML = '';
     rec.appendChild(t2);
-  } else {
-    rec.innerHTML = emptyState('Прямых заходов в архиве нет — проверьте разметку в Справочнике');
-  }
+  } else rec.innerHTML = emptyState('Прямых заходов в архиве нет — проверьте разметку в Справочнике');
 }
 
 function drawChannelsChart(rows){
@@ -4065,7 +4215,6 @@ function drawChannelsChart(rows){
   const W = cssWidth - padL - padR, H = cssHeight - padT - padB;
   const maxV = Math.max(1, ...rows.map(r => Math.max(r.ds, r.ss)));
 
-  // сетка и подписи Y
   ctx.font = '10px "DM Sans", sans-serif';
   ctx.fillStyle = '#8A8985';
   ctx.strokeStyle = 'rgba(40,35,20,.10)';
@@ -4075,9 +4224,9 @@ function drawChannelsChart(rows){
     ctx.textAlign = 'right';
     ctx.fillText((v / 1e6).toFixed(0) + ' млн', padL - 6, y + 3);
   }
-
   const group = W / rows.length;
-  const bw = Math.max(3, Math.min(14, group * 0.32));
+  const bw = Math.max(2, Math.min(14, group * 0.32));
+  const step = Math.max(1, Math.ceil(rows.length / 12));
   rows.forEach((r, i) => {
     const x0 = padL + group * i + group / 2;
     ctx.fillStyle = '#1A7AE6';
@@ -4086,7 +4235,7 @@ function drawChannelsChart(rows){
     ctx.fillStyle = '#A68960';
     const hs = H * r.ss / maxV;
     ctx.fillRect(x0 + 1, padT + H - hs, bw, hs);
-    if (i % 2 === (rows.length % 2 === 0 ? 1 : 0)){
+    if (i % step === 0){
       ctx.fillStyle = '#8A8985';
       ctx.textAlign = 'center';
       ctx.fillText(r.key.slice(5) + '.' + r.key.slice(2, 4), x0, padT + H + 16);
@@ -4105,6 +4254,22 @@ function exportChannelsCsv(){
   a.click();
   URL.revokeObjectURL(a.href);
 }
+
+/* переключатели вкладки */
+(() => {
+  document.querySelectorAll('#chPeriod button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#chPeriod button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    chMode = b.dataset.mode;
+    renderChannels();
+  }));
+  document.querySelectorAll('#chScale button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#chScale button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    chScaleN = Number(b.dataset.n);
+    renderChannels();
+  }));
+})();
 
 /* ════════════════════════════════════════════════════════ РИСКИ ══════════════════════════════════════════════════════════ */
 const RISK_SETTINGS_LS = 'riskSettingsV1';
