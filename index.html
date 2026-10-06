@@ -557,18 +557,35 @@ body { padding-top: 70px; }
 .risk-nopost{background:#7A95B8}
 
 /* ═══ КАНАЛЫ ═══ */
-.ch-kpi{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
-.ch-kpi .chbox{background:var(--srf);border:1px solid var(--brd2);border-radius:12px;padding:12px 16px;min-width:200px;flex:1}
-.ch-kpi .chbox b{display:block;font-size:20px;letter-spacing:-.4px;margin-bottom:2px}
-.ch-kpi .chbox .sub{font-size:12px;color:var(--t2);line-height:1.5}
+.ch-kpi{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 0}
+.ch-kpi .chbox{background:var(--srf);border:1px solid var(--brd2);border-radius:10px;padding:8px 12px;min-width:170px;flex:1}
+.ch-kpi .chbox b{display:block;font-size:17px;letter-spacing:-.3px}
+.ch-kpi .chbox .sub{font-size:11.5px;color:var(--t2);line-height:1.45}
 .ch-kpi .chbox.warn b{color:var(--danger)}
+/* суммарные полосы за период */
+.ch-totals{margin:4px 0 2px;max-width:760px}
+.ch-totals .trow{display:grid;grid-template-columns:72px 1fr;gap:10px;align-items:center;margin:7px 0}
+.ch-totals .tname{font-size:12.5px;color:var(--t2);text-align:right}
+.ch-totals .tbar{position:relative;height:30px}
+.ch-totals .tfill{position:absolute;left:0;top:0;height:30px;border-radius:6px;min-width:2px}
+.ch-totals .tprev{position:absolute;left:0;top:33px;height:5px;border-radius:3px;opacity:.35}
+.ch-totals .tval{position:absolute;left:8px;top:0;line-height:30px;font-weight:700;font-size:14.5px;color:#fff;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.18)}
+.ch-totals .tval.out{color:var(--t1);text-shadow:none}
+.ch-totals .trow.withprev{margin-bottom:12px}
+/* заметки */
+.ch-sum{cursor:pointer;font-weight:600;font-size:16px;user-select:none}
+.ch-notes{margin-top:10px;min-height:52px;border:1.5px solid var(--brd2);border-radius:8px;padding:10px 12px;font-size:14px;line-height:1.55;outline:none}
+.ch-notes:focus{border-color:var(--acc)}
+.ch-notes:empty::before{content:attr(data-placeholder);color:var(--t3)}
+.ch-notes ul{margin:4px 0;padding-left:20px}
+.ch-notes li{margin:5px 0}
+.ch-tblwrap{max-width:900px}
+.ch-tblwrap table{font-size:12.5px}
+.ch-tblwrap th,.ch-tblwrap td{padding:3px 8px}
 .ch-legend{display:flex;gap:16px;font-size:12.5px;color:var(--t2);margin:8px 0 2px}
 .ch-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
 #chTableWrap td.pos{color:var(--ok);font-weight:600}
-.ch-insights{margin:4px 0;padding-left:20px}
-.ch-insights li{margin:7px 0;font-size:14px;line-height:1.5}
-.ch-insights b{letter-spacing:-.2px}
-.ch-insights .up{color:var(--ok)} .ch-insights .down{color:var(--danger)}
+.ch-notes .up{color:var(--ok)} .ch-notes .down{color:var(--danger)}
 #chTableWrap tr.ch-mrow{cursor:pointer}
 #chTableWrap tr.ch-mrow:hover td{background:var(--acc-bg)}
 #chTableWrap tr.ch-detail td{background:var(--bg);font-size:12px;text-align:left;padding:8px 12px}
@@ -992,10 +1009,11 @@ td.spark-cell canvas{display:block}
 <!-- ============ КАНАЛЫ ============ -->
 <section id="channelsView" style="display:none;">
   <div class="card">
-    <h2>🛒 Каналы продаж</h2>
-    <p class="hint">Вход новых договоров по каналам: <b>прямые</b> — прямые заказчики компании (флаг «Прямой» в Справочнике), <b>посредник</b> — остальные.
-      Считается по первому появлению договора в архиве; первичная загрузка и исключённые договоры не входят. Разметка каналов правится в Справочнике — вкладка пересчитается сама.</p>
-    <div style="margin:6px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+      <h2 style="margin:0">🛒 Каналы продаж</h2>
+      <span class="hint" style="margin:0">прямые / непрямые — по флагу «Прямой» в Справочнике; первое появление договора в архиве</span>
+    </div>
+    <div style="margin:10px 0 8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="ai-period" id="chPeriod">
         <button data-mode="yoy" class="active">Год к году</button>
         <button data-mode="m12">12 мес</button>
@@ -1006,33 +1024,38 @@ td.spark-cell canvas{display:block}
       <button id="btnChannelsRefresh" class="small">Обновить</button>
       <button id="btnChannelsCsv" class="small">CSV ⬳</button>
     </div>
+    <div id="chTotals" class="ch-totals"></div>
     <div id="chKpi" class="ch-kpi"></div>
-    <div id="chMeta" class="hint"></div>
+    <div id="chMeta" class="hint" style="margin-top:6px"></div>
   </div>
 
-  <div class="card">
-    <h3 style="margin-top:0">Выводы по данным</h3>
-    <ul id="chInsights" class="ch-insights"></ul>
+  <div class="card" style="padding:14px 20px">
+    <details id="chNotesBox">
+      <summary class="ch-sum">Выводы / заметки <button id="btnChRecalc" class="small" style="margin-left:10px">⟳ Пересчитать из данных</button></summary>
+      <div id="chNotes" class="ch-notes" contenteditable="true" data-placeholder="Свои выводы пиши здесь — текст сохраняется в этом браузере. Кнопка выше заполнит поле свежим расчётом."></div>
+    </details>
   </div>
 
-  <div class="card">
-    <h3 style="margin-top:0">Вход по месяцам</h3>
+  <div class="card" style="padding:16px 20px">
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-      <div class="ch-legend"><span><i style="background:#1A7AE6"></i>Прямые</span><span><i style="background:#A68960"></i>Непрямые</span></div>
+      <h3 style="margin:0">Вход по месяцам</h3>
+      <div class="ch-legend" style="margin:0"><span><i style="background:#1A7AE6"></i>Прямые</span><span><i style="background:#A68960"></i>Непрямые</span></div>
       <div class="ai-period" id="chScale" style="margin-left:auto">
         <button data-n="12">12</button>
         <button data-n="24" class="active">24</button>
         <button data-n="999">Все</button>
       </div>
     </div>
-    <canvas id="chChart" width="1000" height="260"></canvas>
-    <p class="hint" style="margin-top:8px">Клик по строке месяца — список договоров этого месяца.</p>
-    <div id="chTableWrap" style="margin-top:6px"></div>
+    <canvas id="chChart" width="1000" height="230"></canvas>
+    <p class="hint" style="margin:6px 0 4px">Клик по строке месяца — договоры этого месяца. Σ — итог по показанным строкам.</p>
+    <div id="chTableWrap" class="ch-tblwrap"></div>
   </div>
 
-  <div class="card">
-    <h3 style="margin-top:0">Последние заходы прямых</h3>
-    <div id="chRecent"></div>
+  <div class="card" style="padding:14px 20px">
+    <details id="chRecentBox">
+      <summary class="ch-sum">Последние заходы прямых</summary>
+      <div id="chRecent" class="ch-tblwrap" style="margin-top:8px"></div>
+    </details>
   </div>
 </section>
 
@@ -4105,10 +4128,10 @@ function renderChannels(){
   const meta = document.getElementById('chMeta');
   const wrap = document.getElementById('chTableWrap');
   const rec  = document.getElementById('chRecent');
-  const ins  = document.getElementById('chInsights');
+  const tot  = document.getElementById('chTotals');
   const res  = computeChannels();
   if (!res.ok){
-    kpi.innerHTML = ''; wrap.innerHTML = emptyState(res.reason); meta.textContent = ''; rec.innerHTML = ''; ins.innerHTML = '';
+    kpi.innerHTML = ''; wrap.innerHTML = emptyState(res.reason); meta.textContent = ''; rec.innerHTML = ''; tot.innerHTML = '';
     return;
   }
   const { cur, prev } = res;
@@ -4126,15 +4149,28 @@ function renderChannels(){
       : hasPrev ? `<div class="chbox"><b style="color:var(--ok)">+${M(-dropTotal)} ₽</b><div class="sub">рост входа к базе</div></div>` : ''}
     <div class="chbox"><b>${cur.sn ? (cur.ss / cur.sn / 1e6).toFixed(2) : '—'} млн</b><div class="sub">средний договор непрямых${hasPrev && prev.sn ? `<br>${res.prevLabel}: ${(prev.ss / prev.sn / 1e6).toFixed(2)} млн` : ''}</div></div>`;
 
+  // суммарные полосы за выбранный период (бледная подложка — база)
+  {
+    const maxV = Math.max(cur.ds, cur.ss, prev.ds || 0, prev.ss || 0, 1);
+    const Mm = v => (v / 1e6).toFixed(1).replace('.', ',') + ' млн';
+    const bar = (name, v, pv, color) => {
+      const w = Math.max(2, v / maxV * 100);
+      const inside = w > 30;
+      return `<div class="trow${hasPrev ? ' withprev' : ''}">
+        <div class="tname">${name}</div>
+        <div class="tbar">
+          <div class="tfill" style="width:${w}%;background:${color}"></div>
+          <span class="tval${inside ? '' : ' out'}" style="${inside ? '' : 'left:calc(' + w + '% + 8px)'}">${Mm(v)} · ${name === 'Прямые' ? cur.dn : cur.sn} дог.</span>
+          ${hasPrev ? `<div class="tprev" style="width:${Math.max(1, pv / maxV * 100)}%;background:${color}" title="база: ${Mm(pv)}"></div>` : ''}
+        </div></div>`;
+    };
+    tot.innerHTML = bar('Прямые', cur.ds, prev.ds, '#1A7AE6') + bar('Непрямые', cur.ss, prev.ss, '#A68960')
+      + (hasPrev ? `<div class="hint" style="margin:2px 0 0 82px">тонкая полоса — ${res.prevLabel}</div>` : '');
+  }
+
   meta.textContent = `Ряд с ${res.allKeys[0]} по ${res.lastClosed} (закрытые месяцы). Прямых в справочнике помечено: ${res.markedDirect}.`;
 
-  const insights = chBuildInsights(res);
-  ins.innerHTML = insights.map(t => `<li>${t}</li>`).join('');
-  // при открытии сразу по #channels модуль Входа ещё не объявлен — дорисуем вывод о пороге одним отложенным проходом
-  if (!insights.__thresholdShown && !renderChannels.__retried){
-    renderChannels.__retried = true;
-    setTimeout(renderChannels, 0);
-  }
+  chInitNotesOnce();
 
   // таблица: закрытые месяцы периода графика + раскрытие
   const shown = res.rows.slice(-chScaleN);
@@ -4142,6 +4178,18 @@ function renderChannels(){
   const trh = document.createElement('tr');
   ['Месяц','Прямые','шт','Непрямые','шт','Всего'].forEach(h => trh.appendChild(Object.assign(document.createElement('th'), { textContent: h })));
   tbl.appendChild(trh);
+  { // итог по показанным строкам
+    const t = shown.reduce((a, r) => { a.ds += r.ds; a.dn += r.dn; a.ss += r.ss; a.sn += r.sn; return a; }, { ds:0, dn:0, ss:0, sn:0 });
+    const trS = document.createElement('tr');
+    trS.className = 'summary-row';
+    ['Σ ' + shown.length + ' мес', sep(Math.round(t.ds)), t.dn, sep(Math.round(t.ss)), t.sn, sep(Math.round(t.ds + t.ss))].forEach((v, j) => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      if (j === 0) td.style.textAlign = 'left';
+      trS.appendChild(td);
+    });
+    tbl.appendChild(trS);
+  }
   shown.forEach((r, i) => {
     const tr = document.createElement('tr');
     tr.className = 'ch-mrow';
@@ -4255,8 +4303,45 @@ function exportChannelsCsv(){
   URL.revokeObjectURL(a.href);
 }
 
+/* ── заметки «Выводы»: текст пользователя в localStorage, автотекст — только по кнопке ── */
+const CH_NOTES_KEY = 'chNotesV1';
+const CH_NOTES_OPEN = 'chNotesOpenV1';
+const CH_RECENT_OPEN = 'chRecentOpenV1';
+
+function chFillNotesFromData(){
+  const res = computeChannels();
+  if (!res.ok){ showToast(res.reason, 'warning'); return; }
+  const el = document.getElementById('chNotes');
+  const html = '<ul>' + chBuildInsights(res).map(t => `<li>${t}</li>`).join('') + '</ul>'
+    + `<p class="hint">расчёт от ${new Date().toLocaleDateString('ru-RU')}, период: ${res.label}</p>`;
+  el.innerHTML = html;
+  localStorage.setItem(CH_NOTES_KEY, el.innerHTML);
+}
+
+function chInitNotesOnce(){
+  if (chInitNotesOnce.__done) return;
+  chInitNotesOnce.__done = true;
+  const box = document.getElementById('chNotesBox');
+  const el  = document.getElementById('chNotes');
+  box.open = localStorage.getItem(CH_NOTES_OPEN) !== '0';
+  box.addEventListener('toggle', () => localStorage.setItem(CH_NOTES_OPEN, box.open ? '1' : '0'));
+  const saved = localStorage.getItem(CH_NOTES_KEY);
+  if (saved !== null){ el.innerHTML = saved; }
+  else setTimeout(chFillNotesFromData, 0); // первый раз — заполняем расчётом; дальше текст принадлежит пользователю
+  el.addEventListener('input', () => localStorage.setItem(CH_NOTES_KEY, el.innerHTML));
+  const rb = document.getElementById('chRecentBox');
+  rb.open = localStorage.getItem(CH_RECENT_OPEN) === '1';
+  rb.addEventListener('toggle', () => localStorage.setItem(CH_RECENT_OPEN, rb.open ? '1' : '0'));
+}
+
 /* переключатели вкладки */
 (() => {
+  document.getElementById('btnChRecalc').addEventListener('click', e => {
+    e.preventDefault(); e.stopPropagation(); // не сворачивать details
+    const el = document.getElementById('chNotes');
+    if (el.textContent.trim() && !confirm('Заменить текст заметок свежим расчётом из данных?')) return;
+    chFillNotesFromData();
+  });
   document.querySelectorAll('#chPeriod button').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('#chPeriod button').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
