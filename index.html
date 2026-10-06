@@ -881,7 +881,7 @@ td.spark-cell canvas{display:block}
             <th style="width:100px;">ID</th>
             <th>Наименование</th>
             <th style="width:200px;">Примечание</th>
-            <th style="width:70px;" title="Прямой заказчик — оплаты по договору реальные, не разноска партнёра">Прямой</th>
+            <th style="width:70px;" title="Прямой заказчик — оплаты по договору реальные, не разноска посредника">Прямой</th>
             <th style="width:50px;">Действие</th>
           </tr>
         </thead>
@@ -981,7 +981,7 @@ td.spark-cell canvas{display:block}
 <section id="channelsView" style="display:none;">
   <div class="card">
     <h2>🛒 Каналы продаж</h2>
-    <p class="hint">Вход новых договоров по каналам: <b>прямые</b> — прямые заказчики компании (флаг «Прямой» в Справочнике), <b>партнёр</b> — остальные.
+    <p class="hint">Вход новых договоров по каналам: <b>прямые</b> — прямые заказчики компании (флаг «Прямой» в Справочнике), <b>посредник</b> — остальные.
       Считается по первому появлению договора в архиве; первичная загрузка и исключённые договоры не входят. Разметка каналов правится в Справочнике — вкладка пересчитается сама.</p>
     <div style="margin:6px 0">
       <button id="btnChannelsRefresh" class="small">Обновить</button>
@@ -993,7 +993,7 @@ td.spark-cell canvas{display:block}
 
   <div class="card">
     <h3 style="margin-top:0">Вход по месяцам</h3>
-    <div class="ch-legend"><span><i style="background:#1A7AE6"></i>Прямые</span><span><i style="background:#A68960"></i>Партнёр</span></div>
+    <div class="ch-legend"><span><i style="background:#1A7AE6"></i>Прямые</span><span><i style="background:#A68960"></i>Непрямые</span></div>
     <canvas id="chChart" width="1000" height="260"></canvas>
     <div id="chTableWrap" style="margin-top:14px"></div>
   </div>
@@ -1008,7 +1008,7 @@ td.spark-cell canvas{display:block}
   <div class="card">
     <h2>⚠️ Риски по договорам</h2>
     <p class="hint">Автоматический отбор проблемных договоров из последнего импорта. Клик по счётчику — фильтр по категории.
-    Для <b>прямых заказчиков</b> (флаг в Справочнике) «Застой оплат» — сигнал о клиенте; по партнёрским договорам деньги идут общим котлом, поэтому там показывается «Нет разноски» — сигнал бухгалтерии, а не о плательщике.</p>
+    Для <b>прямых заказчиков</b> (флаг в Справочнике) «Застой оплат» — сигнал о клиенте; по непрямым договорам деньги идут общим котлом, поэтому там показывается «Нет разноски» — сигнал бухгалтерии, а не о плательщике.</p>
 
     <div class="risk-settings" style="margin:10px 0;">
       <label>Порог перерасхода СС, %:
@@ -1457,8 +1457,8 @@ const savePf = () => {
 };
 let store = JSON.parse(localStorage.getItem(LS_KEY)||'[]');
 
-/* ── Прямые заказчики (не через партнёра) ──
-   По партнёрским договорам оплаты — административная разноска общего котла;
+/* ── Прямые заказчики (не через посредника) ──
+   По непрямым договорам оплаты — административная разноска общего котла;
    по прямым — реальная платёжная логика договора. Флаг живёт в справочнике. */
 function isDirectContract(num){
   const info = contractsDirectory[String(num).trim()];
@@ -1466,7 +1466,7 @@ function isDirectContract(num){
 }
 (function seedDirectCustomers(){
   if (localStorage.getItem('directSeedV1')) return;
-  const PREFIXES = ['26-07', '25-45', '25-43', '26-09-02', '26-09-03']; // 26-09-02/03 — проданы партнёром, договор прямой
+  const PREFIXES = ['26-07', '25-45', '25-43', '26-09-02', '26-09-03']; // 26-09-02/03 — проданы посредником, договор прямой
   let changed = false;
   try {
     store.forEach(imp => (imp.data || []).forEach(r => {
@@ -3927,7 +3927,7 @@ document.getElementById('btnExport').parentElement.insertBefore(btnExportLegacy,
 
 /* ════════════════════════════════════════════════════════ ROUTER ═════════════════════════════════════════════════════════ */
 /* ════════════════════════════════════════════════════════ КАНАЛЫ ═════════════════════════════════════════════════════════ */
-/* Вход новых договоров по каналам: прямые (флаг в Справочнике) против партнёра.
+/* Вход новых договоров по каналам: прямые (флаг в Справочнике) против посредника.
    Первое появление договора в архиве; первичная загрузка и исключённые — вне набора. */
 
 function computeChannels(){
@@ -3996,11 +3996,11 @@ function renderChannels(){
   kpi.innerHTML = `
     <div class="chbox"><b>${M(cur.ds)} ₽</b><div class="sub">Прямые, янв–${String(mTo).padStart(2,'0')}.${curY} • ${cur.dn} дог.<br>
       год назад ${M(prev.ds)} (${prev.dn} дог.) • ${pct(cur.ds, prev.ds)}</div></div>
-    <div class="chbox"><b>${M(cur.ss)} ₽</b><div class="sub">Партнёр, янв–${String(mTo).padStart(2,'0')}.${curY} • ${cur.sn} дог.<br>
+    <div class="chbox"><b>${M(cur.ss)} ₽</b><div class="sub">Непрямые, янв–${String(mTo).padStart(2,'0')}.${curY} • ${cur.sn} дог.<br>
       год назад ${M(prev.ss)} (${prev.sn} дог.) • ${pct(cur.ss, prev.ss)}</div></div>
     ${dropTotal > 0 ? `<div class="chbox warn"><b>−${M(dropTotal)} ₽</b><div class="sub">падение входа к прошлому году<br>
-      вклад: прямые ${shareD}% • партнёр ${shareS}%</div></div>` : ''}
-    <div class="chbox"><b>${cur.sn ? (cur.ss / cur.sn / 1e6).toFixed(2) : '—'} млн</b><div class="sub">средний чек партнёра<br>
+      вклад: прямые ${shareD}% • непрямые ${shareS}%</div></div>` : ''}
+    <div class="chbox"><b>${cur.sn ? (cur.ss / cur.sn / 1e6).toFixed(2) : '—'} млн</b><div class="sub">средний чек непрямых<br>
       год назад ${prev.sn ? (prev.ss / prev.sn / 1e6).toFixed(2) : '—'} млн</div></div>`;
 
   meta.textContent = `Сравнение по последний закрытый месяц (${String(mTo).padStart(2,'0')}.${curY}). Прямых в справочнике помечено: ${res.markedDirect}.`;
@@ -4009,7 +4009,7 @@ function renderChannels(){
   const tail = rows.slice(-24);
   const tbl = document.createElement('table');
   const trh = document.createElement('tr');
-  ['Месяц','Прямые','шт','Партнёр','шт','Всего'].forEach(h => trh.appendChild(Object.assign(document.createElement('th'), { textContent: h })));
+  ['Месяц','Прямые','шт','Непрямые','шт','Всего'].forEach(h => trh.appendChild(Object.assign(document.createElement('th'), { textContent: h })));
   tbl.appendChild(trh);
   tail.forEach((r, i) => {
     const tr = document.createElement('tr');
@@ -4097,7 +4097,7 @@ function drawChannelsChart(rows){
 function exportChannelsCsv(){
   const res = computeChannels();
   if (!res.ok){ showToast(res.reason, 'warning'); return; }
-  const lines = ['\uFEFFМесяц;Прямые,₽;Прямые,шт;Партнёр,₽;Партнёр,шт;Всего,₽'];
+  const lines = ['\uFEFFМесяц;Прямые,₽;Прямые,шт;Непрямые,₽;Непрямые,шт;Всего,₽'];
   res.rows.forEach(r => lines.push([r.key, Math.round(r.ds), r.dn, Math.round(r.ss), r.sn, Math.round(r.ds + r.ss)].join(';')));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
@@ -4635,9 +4635,9 @@ function aiDataContext(){
   return `
 
 КОНТЕКСТ СХЕМЫ ДАННЫХ (критично для выводов):
-Компания работает через партнёра-посредника: конечные заказчики платят партнёру, партнёр вносит деньги общим потоком, а бухгалтерия разносит их по заказам административно — деньги заказчика А могут быть записаны на договор Б. Поэтому:
-— «СуммаОплат» и «ОстатокОплат» по ОТДЕЛЬНОМУ договору — административная разноска, а не платёжная дисциплина клиента. Не делай выводов о «надёжных/проблемных плательщиках» по движению оплат отдельных партнёрских договоров; «застой оплат» там означает «нет разноски».
-— СУММАРНЫЕ оплаты по портфелю — реальные деньги от партнёра, им доверять можно.
+Компания работает через посредника: конечные заказчики платят посреднику, посредник вносит деньги общим потоком, а бухгалтерия разносит их по заказам административно — деньги заказчика А могут быть записаны на договор Б. Поэтому:
+— «СуммаОплат» и «ОстатокОплат» по ОТДЕЛЬНОМУ договору — административная разноска, а не платёжная дисциплина клиента. Не делай выводов о «надёжных/проблемных плательщиках» по движению оплат отдельных непрямых договоров; «застой оплат» там означает «нет разноски».
+— СУММАРНЫЕ оплаты по портфелю — реальные деньги от посредника, им доверять можно.
 — Самая достоверная колонка — ССФакт (реальные затраты); коэффициент «по сумме договоров» честнее коэффициента «по оплаченному».
 — Исключение — прямые заказчики компании, у них оплаты привязаны к логике договора: ${direct.length ? direct.slice(0, 40).join(', ') : 'в справочнике пока не помечены'}.`;
 }
@@ -5083,7 +5083,7 @@ function renderDirectoryTable() {
     const cbDir = document.createElement('input');
     cbDir.type = 'checkbox';
     cbDir.checked = !!info.direct;
-    cbDir.title = 'Прямой заказчик (оплаты — реальная логика договора, не разноска партнёра)';
+    cbDir.title = 'Прямой заказчик (оплаты — реальная логика договора, не разноска посредника)';
     cbDir.addEventListener('change', () => {
       contractsDirectory[id].direct = cbDir.checked;
       saveContractsDirectory();
