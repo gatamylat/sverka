@@ -554,6 +554,7 @@ body { padding-top: 70px; }
 .risk-overrun{background:#E89A0A}
 .risk-stale{background:#A855C7}
 .risk-nocost{background:#8A8985}
+.risk-nopost{background:#7A95B8}
 .risk-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:13px;background:rgba(40,35,20,.04);margin-right:8px;margin-bottom:6px;cursor:pointer;user-select:none;border:1.5px solid transparent;transition:all .15s var(--ease)}
 .risk-chip:active{transform:scale(.98)}
 .risk-chip.active{border-color:var(--acc);background:var(--acc-bg)}
@@ -868,6 +869,7 @@ td.spark-cell canvas{display:block}
             <th style="width:100px;">ID</th>
             <th>Наименование</th>
             <th style="width:200px;">Примечание</th>
+            <th style="width:70px;" title="Прямой заказчик Массивбурга — оплаты по договору реальные, не разноска салона">Прямой</th>
             <th style="width:50px;">Действие</th>
           </tr>
         </thead>
@@ -966,7 +968,8 @@ td.spark-cell canvas{display:block}
 <section id="risksView" style="display:none;">
   <div class="card">
     <h2>⚠️ Риски по договорам</h2>
-    <p class="hint">Автоматический отбор проблемных договоров из последнего импорта. Клик по счётчику — фильтр по категории.</p>
+    <p class="hint">Автоматический отбор проблемных договоров из последнего импорта. Клик по счётчику — фильтр по категории.
+    Для <b>прямых заказчиков</b> (флаг в Справочнике) «Застой оплат» — сигнал о клиенте; по салонным договорам деньги идут общим котлом, поэтому там показывается «Нет разноски» — сигнал бухгалтерии, а не о плательщике.</p>
 
     <div class="risk-settings" style="margin:10px 0;">
       <label>Порог перерасхода СС, %:
@@ -1382,9 +1385,10 @@ function importContractsDirectory(text) {
       const id = parts[0].trim();
       const name = parts[1].trim();
       const comment = parts[2] ? parts[2].trim() : '';
+      const direct = parts[3] ? ['1','да','true','x','+'].includes(parts[3].trim().toLowerCase()) : false;
       
       if (id) {
-        contractsDirectory[id] = { name, comment };
+        contractsDirectory[id] = { name, comment, direct };
         imported++;
       }
     }
@@ -1413,6 +1417,29 @@ const savePf = () => {
   }
 };
 let store = JSON.parse(localStorage.getItem(LS_KEY)||'[]');
+
+/* ── Прямые заказчики Массивбурга (не через салон) ──
+   По салонным договорам оплаты — административная разноска общего котла;
+   по прямым — реальная платёжная логика договора. Флаг живёт в справочнике. */
+function isDirectContract(num){
+  const info = contractsDirectory[String(num).trim()];
+  return !!(info && info.direct);
+}
+(function seedDirectCustomers(){
+  if (localStorage.getItem('directSeedV1')) return;
+  const PREFIXES = ['26-07', '25-45', '25-43', '26-09-02', '26-09-03']; // 26-09-02/03 — проданы менеджерами салона, но договор на Массивбурге
+  let changed = false;
+  try {
+    store.forEach(imp => (imp.data || []).forEach(r => {
+      const n = String(r.Номер).trim();
+      if (!n || !PREFIXES.some(p => n.startsWith(p))) return;
+      if (!contractsDirectory[n]) contractsDirectory[n] = { name: '', comment: '' };
+      if (!contractsDirectory[n].direct){ contractsDirectory[n].direct = true; changed = true; }
+    }));
+  } catch(e){}
+  if (changed) saveContractsDirectory();
+  localStorage.setItem('directSeedV1', '1');
+})();
 
 
 /* ════════════════════════════════════════════════════════ UTILS ══════════════════════════════════════════════════════════ */
@@ -2309,7 +2336,9 @@ function calcTotals(rows){
       const ssPred = toNum(r.ССПред);
       const ssFact = toNum(r.ССФакт);
       const ostatokSS = (ssPlan && ssPlan !== 0) ? (ssPlan - ssFact) : (ssPred - ssFact);
-      ssAbs += Math.abs(ostatokSS);
+      // перерасход (факт > плана) — работа уже сделана, остатка работ нет;
+      // Math.abs здесь превращал перерасход в фиктивный «остаток» и завышал оба сальдо
+      ssAbs += Math.max(0, ostatokSS);
     });
   return { bal, ssAbs };
 }
@@ -3929,7 +3958,10 @@ function computeRisks(){
       }
       const days = Math.round((lastDate - new Date(changeDate)) / 86400000);
       if (days >= staleDays){
-        risks.push({ code:'stale', text:`Без оплат ${days} дн., остаток ${sep(ostatok)}` });
+        const __dir = isDirectContract(r.Номер);
+        risks.push({ code:'stale', direct: __dir,
+          text: __dir ? `Без оплат ${days} дн., остаток ${sep(ostatok)}`
+                      : `Нет разноски ${days} дн., остаток ${sep(ostatok)}` });
         counts.stale++;
       }
     }
@@ -4005,8 +4037,9 @@ function renderRisks(){
     const tdRisks = document.createElement('td');
     r.risks.forEach(x => {
       const b = document.createElement('span');
-      b.className = `risk-badge ${RISK_META[x.code].cls}`;
-      b.textContent = RISK_META[x.code].label;
+      const salonStale = x.code === 'stale' && !x.direct;
+      b.className = `risk-badge ${salonStale ? 'risk-nopost' : RISK_META[x.code].cls}`;
+      b.textContent = salonStale ? 'Нет разноски' : RISK_META[x.code].label;
       b.title = x.text;
       tdRisks.appendChild(b);
     });
@@ -4377,6 +4410,19 @@ function aiRenderResult(el, text){
   el.classList.add('show');
 }
 
+function aiDataContext(){
+  const direct = Object.entries(contractsDirectory)
+    .filter(([, i]) => i && i.direct).map(([n]) => n).sort();
+  return `
+
+КОНТЕКСТ СХЕМЫ ДАННЫХ (критично для выводов):
+Массивбург работает через салон-посредник: конечные заказчики платят салону, салон вносит деньги общим потоком, а бухгалтерия разносит их по заказам административно — деньги заказчика А могут быть записаны на договор Б. Поэтому:
+— «СуммаОплат» и «ОстатокОплат» по ОТДЕЛЬНОМУ договору — административная разноска, а не платёжная дисциплина клиента. Не делай выводов о «надёжных/проблемных плательщиках» по движению оплат отдельных салонных договоров; «застой оплат» там означает «нет разноски».
+— СУММАРНЫЕ оплаты по портфелю — реальные деньги от салона, им доверять можно.
+— Самая достоверная колонка — ССФакт (реальные затраты); коэффициент «по сумме договоров» честнее коэффициента «по оплаченному».
+— Исключение — прямые заказчики Массивбурга, у них оплаты привязаны к логике договора: ${direct.length ? direct.slice(0, 40).join(', ') : 'в справочнике пока не помечены'}.`;
+}
+
 const AI_ACTIONS_SUFFIX = `
 
 В самом конце ответа, отдельной последней строкой, добавь блок:
@@ -4456,7 +4502,7 @@ async function aiSend(personaId, btn){
   const meta = document.querySelector(`[data-meta="${personaId}"]`);
   if (!cfg.key){ showToast('Введите API-ключ в настройках выше', 'warning'); return; }
 
-  const systemPrompt = document.querySelector(`[data-pt="${personaId}"]`).value + AI_ACTIONS_SUFFIX;
+  const systemPrompt = document.querySelector(`[data-pt="${personaId}"]`).value + aiDataContext() + AI_ACTIONS_SUFFIX;
   const chat = aiChats[personaId];
   // страховка от разрастания контекста: первое сообщение (данные) + последние 10 реплик
   const messages = chat.length > 11 ? [chat[0], ...chat.slice(-10)] : chat;
@@ -4769,6 +4815,7 @@ function renderDirectoryTable() {
   let count = 0;
   let withNames = 0;
   
+  let directCount = 0;
   Object.entries(contractsDirectory).forEach(([id, info]) => {
     // Фильтрация по поиску
     const searchStr = `${id} ${info.name} ${info.comment}`.toLowerCase();
@@ -4776,6 +4823,7 @@ function renderDirectoryTable() {
     
     count++;
     if (info.name) withNames++;
+    if (info.direct) directCount++;
     
     const tr = document.createElement('tr');
     
@@ -4804,7 +4852,21 @@ function renderDirectoryTable() {
       saveContractsDirectory();
     });
     tr.appendChild(tdComment);
-    
+
+    // Прямой заказчик
+    const tdDir = document.createElement('td');
+    tdDir.style.textAlign = 'center';
+    const cbDir = document.createElement('input');
+    cbDir.type = 'checkbox';
+    cbDir.checked = !!info.direct;
+    cbDir.title = 'Прямой заказчик Массивбурга (оплаты — реальная логика договора, не разноска салона)';
+    cbDir.addEventListener('change', () => {
+      contractsDirectory[id].direct = cbDir.checked;
+      saveContractsDirectory();
+    });
+    tdDir.appendChild(cbDir);
+    tr.appendChild(tdDir);
+
     // Удаление
     const tdDel = document.createElement('td');
     const btnDel = document.createElement('button');
@@ -4827,7 +4889,8 @@ function renderDirectoryTable() {
   document.getElementById('dirStats').innerHTML = `
     Всего договоров: <strong>${count}</strong><br>
     С наименованиями: <strong>${withNames}</strong><br>
-    Без наименований: <strong>${count - withNames}</strong>
+    Без наименований: <strong>${count - withNames}</strong><br>
+    Прямых заказчиков: <strong>${directCount}</strong>
   `;
 }
 
@@ -4875,10 +4938,10 @@ function importDirectoryCSV() {
 }
 
 function exportDirectoryCSV() {
-  const lines = ['ID;Наименование;Примечание'];
+  const lines = ['ID;Наименование;Примечание;Прямой'];
   
   Object.entries(contractsDirectory).forEach(([id, info]) => {
-    lines.push(`${id};${info.name || ''};${info.comment || ''}`);
+    lines.push(`${id};${info.name || ''};${info.comment || ''};${info.direct ? '1' : ''}`);
   });
   
   const csv = '\uFEFF' + lines.join('\n');
@@ -5819,6 +5882,18 @@ function computeInflow(opts) {
     return sel.length ? sel.reduce((s, r) => s + r.inflow, 0) / sel.length : 0;
   };
 
+  /* --- 7b. Норма оборачиваемости 2025: медиана (темп интервала / остаток СС на его конец).
+         База для вилки срока и «цены замедления». --- */
+  const turns2025 = [];
+  intervals.forEach(iv => {
+    if (iv.break || iv.rate === null || !iv.rate) return;
+    if (iv.to < '2025-01-01' || iv.to > '2025-12-31') return;
+    const t = calcTotals(liveRows(snaps[iv.i], excl));
+    if (t.ssAbs > 0) turns2025.push(iv.rate / t.ssAbs);
+  });
+  turns2025.sort((a, b) => a - b);
+  const normTurn = turns2025.length ? turns2025[Math.floor(turns2025.length / 2)] : 0;
+
   /* --- 8. Сальдо: объём против времени --- */
   const lastSnap = snaps[snaps.length - 1];
   const { bal, ssAbs } = calcTotals(lastSnap.data);
@@ -5842,7 +5917,7 @@ function computeInflow(opts) {
     snaps, rows, breaks, intervals, excl,
     firstDate, lastDate,
     windowDays, windowFrom: wFrom, windowDays_used: wDays,
-    directMonth, indirectMonth, indirectEst, indirectDelta, dashCoef,
+    directMonth, indirectMonth, indirectEst, indirectDelta, dashCoef, normTurn,
     coefSale, coefOrder, sumPays, sumSsFact, sumOrders,
     share, threshold, gap,
     inflowLast, inflowAvg3, lastFullIdx,
@@ -6126,7 +6201,20 @@ function renderInflowSaldo(res) {
       ${f(res.indirectMonth)} ÷ (${f(res.directMonth)} × ${s.coefUsed.toFixed(2)}) − 1 — остаток себестоимости в этом отношении сокращается.
       Поэтому смотреть надо не на сегодняшнюю разницу, а на поведение: измени окно усреднения прямых вверху экрана — «Сальдо (t)» поедет, а старое «Сальдо» не шелохнётся.
       Если когда-нибудь косвенные снова начнут считать как Прямые × k, колонки схлопнутся в одну: прямые сократятся и останется Остаток СС × k.
-    </div>`;
+    </div>
+    ${(() => {
+      if (!(res.normTurn > 0) || s.finish === null) return '';
+      const normFinish = 1 / res.normTurn;
+      const normInd    = res.indirectMonth * normFinish;
+      const normSal    = s.bal - s.ssAbs - normInd;
+      const slowCost   = (s.finish - normFinish) * res.indirectMonth;
+      return `<div class="explain" style="margin-top:8px">
+      <b>Вилка срока и цена замедления.</b> Норма оборачиваемости 2025 — ${res.normTurn.toFixed(3)}/мес (медиана по интервалам прошлого года), при ней срок доделки был бы
+      <b>${normFinish.toFixed(2)} мес</b>, косвенные ${f(normInd)}, сальдо <b>${f(normSal)}</b>.
+      Фактический срок ${s.finish.toFixed(2)} мес — разница ${(s.finish - normFinish).toFixed(2)} мес × ${f(res.indirectMonth)} косвенных =
+      <b style="color:${slowCost > 0 ? 'var(--danger)' : 'var(--ok)'}">цена замедления ${f(slowCost)} ₽</b>.
+      Это сколько дополнительных косвенных съест доделка портфеля на текущем темпе против прошлогоднего.</div>`;
+    })()}`;
 
   const tie = (thId, boxId) => {
     const th = document.getElementById(thId), box = document.getElementById(boxId);
