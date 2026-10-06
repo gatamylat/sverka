@@ -555,6 +555,17 @@ body { padding-top: 70px; }
 .risk-stale{background:#A855C7}
 .risk-nocost{background:#8A8985}
 .risk-nopost{background:#7A95B8}
+
+/* ═══ КАНАЛЫ ═══ */
+.ch-kpi{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+.ch-kpi .chbox{background:var(--srf);border:1px solid var(--brd2);border-radius:12px;padding:12px 16px;min-width:200px;flex:1}
+.ch-kpi .chbox b{display:block;font-size:20px;letter-spacing:-.4px;margin-bottom:2px}
+.ch-kpi .chbox .sub{font-size:12px;color:var(--t2);line-height:1.5}
+.ch-kpi .chbox.warn b{color:var(--danger)}
+.ch-legend{display:flex;gap:16px;font-size:12.5px;color:var(--t2);margin:8px 0 2px}
+.ch-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
+#chTableWrap td.pos{color:var(--ok);font-weight:600}
+#chTableWrap td.negv{color:var(--danger);font-weight:600}
 .risk-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:13px;background:rgba(40,35,20,.04);margin-right:8px;margin-bottom:6px;cursor:pointer;user-select:none;border:1.5px solid transparent;transition:all .15s var(--ease)}
 .risk-chip:active{transform:scale(.98)}
 .risk-chip.active{border-color:var(--acc);background:var(--acc-bg)}
@@ -677,6 +688,7 @@ td.spark-cell canvas{display:block}
   <a href="#directory" id="linkDir">Справочник</a>
   <a href="#dashboard" id="linkDash">Дашборд</a>
   <a href="#inflow" id="linkInflow">📥 Вход</a>
+  <a href="#channels" id="linkChannels">🛒 Каналы</a>
   <a href="#risks" id="linkRisks">⚠️ Риски</a>
   <a href="#ai" id="linkAi">🤖 ИИ</a>
   <label id="hideDeletedLabel" style="margin-left:16px;font-size:13px;color:#666;cursor:pointer;user-select:none;">
@@ -965,6 +977,33 @@ td.spark-cell canvas{display:block}
 </section>
 
 <!-- ============ РИСКИ ============ -->
+<!-- ============ КАНАЛЫ ============ -->
+<section id="channelsView" style="display:none;">
+  <div class="card">
+    <h2>🛒 Каналы продаж</h2>
+    <p class="hint">Вход новых договоров по каналам: <b>прямые</b> — заказчики Массивбурга (флаг «Прямой» в Справочнике), <b>салон</b> — остальные.
+      Считается по первому появлению договора в архиве; первичная загрузка и исключённые договоры не входят. Разметка каналов правится в Справочнике — вкладка пересчитается сама.</p>
+    <div style="margin:6px 0">
+      <button id="btnChannelsRefresh" class="small">Обновить</button>
+      <button id="btnChannelsCsv" class="small" style="margin-left:8px">CSV ⬳</button>
+    </div>
+    <div id="chKpi" class="ch-kpi"></div>
+    <div id="chMeta" class="hint"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Вход по месяцам</h3>
+    <div class="ch-legend"><span><i style="background:#1A7AE6"></i>Прямые</span><span><i style="background:#A68960"></i>Салон</span></div>
+    <canvas id="chChart" width="1000" height="260"></canvas>
+    <div id="chTableWrap" style="margin-top:14px"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Последние заходы прямых</h3>
+    <div id="chRecent"></div>
+  </div>
+</section>
+
 <section id="risksView" style="display:none;">
   <div class="card">
     <h2>⚠️ Риски по договорам</h2>
@@ -3887,6 +3926,186 @@ btnExportLegacy.onclick = () => {
 document.getElementById('btnExport').parentElement.insertBefore(btnExportLegacy, document.getElementById('btnImport'));
 
 /* ════════════════════════════════════════════════════════ ROUTER ═════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════ КАНАЛЫ ═════════════════════════════════════════════════════════ */
+/* Вход новых договоров по каналам: прямые (флаг в Справочнике) против салона.
+   Первое появление договора в архиве; первичная загрузка и исключённые — вне набора. */
+
+function computeChannels(){
+  if (store.length < 2) return { ok:false, reason:'Нужно минимум два импорта — загрузите CSV на главной' };
+  // исключения читаем напрямую: модуль Входа объявлен ниже, при раннем вызове его константы ещё в TDZ
+  let __exclArr = null;
+  try { __exclArr = JSON.parse(localStorage.getItem('inflowExcludedV1') || 'null'); } catch(e){}
+  const excl = new Set(__exclArr || ['24-04-01','24-04-02','22-03-25','25-23-02','25-31-01','26-03-01-01','24-09-02','24-30-02']);
+  const snaps = [...store].sort((a, b) => a.date < b.date ? -1 : 1);
+  const liveOf = s => s.data.filter(r => r.__status !== 'deleted' && !excl.has(String(r.Номер).trim()));
+
+  const seen = new Set(liveOf(snaps[0]).map(r => String(r.Номер).trim()));
+  const months = new Map();
+  const directLog = [];
+  for (let i = 1; i < snaps.length; i++){
+    const key = snaps[i].date.slice(0, 7);
+    liveOf(snaps[i]).forEach(r => {
+      const n = String(r.Номер).trim();
+      if (!n || seen.has(n)) return;
+      seen.add(n);
+      const sum = toNum(r.СуммаЗаказа);
+      if (!months.has(key)) months.set(key, { key, ds:0, dn:0, ss:0, sn:0 });
+      const b = months.get(key);
+      if (isDirectContract(n)){ b.ds += sum; b.dn++; directLog.push({ num:n, date:snaps[i].date, sum }); }
+      else { b.ss += sum; b.sn++; }
+    });
+  }
+  const rows = [...months.values()].sort((a, b) => a.key < b.key ? -1 : 1);
+  if (!rows.length) return { ok:false, reason:'Новых договоров в архиве пока нет' };
+
+  // сопоставимые периоды: текущий год против прошлого, по последний ЗАКРЫТЫЙ месяц
+  const lastDate = snaps[snaps.length - 1].date;
+  const curY = Number(lastDate.slice(0, 4));
+  let mTo = Number(lastDate.slice(5, 7));
+  const endOfMonth = new Date(Date.UTC(curY, mTo, 0)).toISOString().slice(0, 10);
+  if (lastDate < endOfMonth) mTo -= 1;                       // текущий месяц не закрыт — не сравниваем
+  const aggr = (y, upTo) => rows.reduce((a, r) => {
+    const yy = +r.key.slice(0, 4), mm = +r.key.slice(5);
+    if (yy === y && mm <= upTo){ a.ds += r.ds; a.dn += r.dn; a.ss += r.ss; a.sn += r.sn; }
+    return a;
+  }, { ds:0, dn:0, ss:0, sn:0 });
+  const cur  = aggr(curY, mTo);
+  const prev = aggr(curY - 1, mTo);
+  const markedDirect = Object.values(contractsDirectory).filter(i => i && i.direct).length;
+
+  return { ok:true, rows, directLog: directLog.slice(-10).reverse(), cur, prev, curY, mTo, markedDirect, lastDate };
+}
+
+function renderChannels(){
+  const kpi  = document.getElementById('chKpi');
+  const meta = document.getElementById('chMeta');
+  const wrap = document.getElementById('chTableWrap');
+  const rec  = document.getElementById('chRecent');
+  const res  = computeChannels();
+  if (!res.ok){
+    kpi.innerHTML = ''; wrap.innerHTML = emptyState(res.reason); meta.textContent = ''; rec.innerHTML = '';
+    return;
+  }
+  const { rows, cur, prev, curY, mTo } = res;
+  const M = v => sep(Math.round(v / 1e3) * 1e3);
+  const pct = (a, b) => b > 0 ? ((a / b - 1) * 100).toFixed(0) + '%' : '—';
+  const dropTotal = (prev.ds + prev.ss) - (cur.ds + cur.ss);
+  const shareD = dropTotal > 0 ? ((prev.ds - cur.ds) / dropTotal * 100).toFixed(0) : '—';
+  const shareS = dropTotal > 0 ? ((prev.ss - cur.ss) / dropTotal * 100).toFixed(0) : '—';
+
+  kpi.innerHTML = `
+    <div class="chbox"><b>${M(cur.ds)} ₽</b><div class="sub">Прямые, янв–${String(mTo).padStart(2,'0')}.${curY} • ${cur.dn} дог.<br>
+      год назад ${M(prev.ds)} (${prev.dn} дог.) • ${pct(cur.ds, prev.ds)}</div></div>
+    <div class="chbox"><b>${M(cur.ss)} ₽</b><div class="sub">Салон, янв–${String(mTo).padStart(2,'0')}.${curY} • ${cur.sn} дог.<br>
+      год назад ${M(prev.ss)} (${prev.sn} дог.) • ${pct(cur.ss, prev.ss)}</div></div>
+    ${dropTotal > 0 ? `<div class="chbox warn"><b>−${M(dropTotal)} ₽</b><div class="sub">падение входа к прошлому году<br>
+      вклад: прямые ${shareD}% • салон ${shareS}%</div></div>` : ''}
+    <div class="chbox"><b>${cur.sn ? (cur.ss / cur.sn / 1e6).toFixed(2) : '—'} млн</b><div class="sub">средний чек салона<br>
+      год назад ${prev.sn ? (prev.ss / prev.sn / 1e6).toFixed(2) : '—'} млн</div></div>`;
+
+  meta.textContent = `Сравнение по последний закрытый месяц (${String(mTo).padStart(2,'0')}.${curY}). Прямых в справочнике помечено: ${res.markedDirect}.`;
+
+  // таблица помесячно (последние 24 месяца) + годовые итоги
+  const tail = rows.slice(-24);
+  const tbl = document.createElement('table');
+  const trh = document.createElement('tr');
+  ['Месяц','Прямые','шт','Салон','шт','Всего'].forEach(h => trh.appendChild(Object.assign(document.createElement('th'), { textContent: h })));
+  tbl.appendChild(trh);
+  tail.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    if (i % 2) tr.style.background = 'rgba(40,35,20,.03)';
+    [r.key, sep(Math.round(r.ds)), r.dn, sep(Math.round(r.ss)), r.sn, sep(Math.round(r.ds + r.ss))].forEach((v, j) => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      if (j === 0) td.style.textAlign = 'left';
+      tr.appendChild(td);
+    });
+    tbl.appendChild(tr);
+  });
+  wrap.innerHTML = '';
+  wrap.appendChild(tbl);
+
+  drawChannelsChart(tail);
+
+  // последние заходы прямых
+  if (res.directLog.length){
+    const t2 = document.createElement('table');
+    const h2 = document.createElement('tr');
+    ['Дата','Договор','Заказчик','Сумма'].forEach(h => h2.appendChild(Object.assign(document.createElement('th'), { textContent: h })));
+    t2.appendChild(h2);
+    res.directLog.forEach(d => {
+      const tr = document.createElement('tr');
+      const info = getContractInfo(d.num);
+      [fmtDate(d.date), d.num, info.exists ? info.name : '—', sep(Math.round(d.sum))].forEach((v, j) => {
+        const td = document.createElement('td');
+        td.textContent = v;
+        if (j < 3) td.style.textAlign = 'left';
+        tr.appendChild(td);
+      });
+      t2.appendChild(tr);
+    });
+    rec.innerHTML = '';
+    rec.appendChild(t2);
+  } else {
+    rec.innerHTML = emptyState('Прямых заходов в архиве нет — проверьте разметку в Справочнике');
+  }
+}
+
+function drawChannelsChart(rows){
+  const c = document.getElementById('chChart');
+  if (!c || !rows.length) return;
+  const parent = c.parentElement;
+  const cssWidth  = Math.max(320, parent ? parent.clientWidth - 40 : 600);
+  const cssHeight = 260;
+  const ctx = fitHiDPICanvas(c, cssWidth, cssHeight);
+  if (!ctx) return;
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+  const padL = 56, padR = 10, padT = 12, padB = 30;
+  const W = cssWidth - padL - padR, H = cssHeight - padT - padB;
+  const maxV = Math.max(1, ...rows.map(r => Math.max(r.ds, r.ss)));
+
+  // сетка и подписи Y
+  ctx.font = '10px "DM Sans", sans-serif';
+  ctx.fillStyle = '#8A8985';
+  ctx.strokeStyle = 'rgba(40,35,20,.10)';
+  for (let g = 0; g <= 4; g++){
+    const v = maxV * g / 4, y = padT + H - H * g / 4;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + W, y); ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText((v / 1e6).toFixed(0) + ' млн', padL - 6, y + 3);
+  }
+
+  const group = W / rows.length;
+  const bw = Math.max(3, Math.min(14, group * 0.32));
+  rows.forEach((r, i) => {
+    const x0 = padL + group * i + group / 2;
+    ctx.fillStyle = '#1A7AE6';
+    const hd = H * r.ds / maxV;
+    ctx.fillRect(x0 - bw - 1, padT + H - hd, bw, hd);
+    ctx.fillStyle = '#A68960';
+    const hs = H * r.ss / maxV;
+    ctx.fillRect(x0 + 1, padT + H - hs, bw, hs);
+    if (i % 2 === (rows.length % 2 === 0 ? 1 : 0)){
+      ctx.fillStyle = '#8A8985';
+      ctx.textAlign = 'center';
+      ctx.fillText(r.key.slice(5) + '.' + r.key.slice(2, 4), x0, padT + H + 16);
+    }
+  });
+}
+
+function exportChannelsCsv(){
+  const res = computeChannels();
+  if (!res.ok){ showToast(res.reason, 'warning'); return; }
+  const lines = ['\uFEFFМесяц;Прямые,₽;Прямые,шт;Салон,₽;Салон,шт;Всего,₽'];
+  res.rows.forEach(r => lines.push([r.key, Math.round(r.ds), r.dn, Math.round(r.ss), r.sn, Math.round(r.ds + r.ss)].join(';')));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = `channels_${res.lastDate}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 /* ════════════════════════════════════════════════════════ РИСКИ ══════════════════════════════════════════════════════════ */
 const RISK_SETTINGS_LS = 'riskSettingsV1';
 const RISK_META = {
@@ -4696,7 +4915,7 @@ function isRealDate(iso){
 /* ======== ROUTER (#main / #history / #pf / #coefficients) ======== */
 
 // Все панели-секции (не .card главного экрана)
-const PANEL_IDS = ['historyView', 'pfView', 'coefView', 'directoryView', 'dashboardView', 'inflowView', 'risksView', 'aiView'];
+const PANEL_IDS = ['historyView', 'pfView', 'coefView', 'directoryView', 'dashboardView', 'inflowView', 'channelsView', 'risksView', 'aiView'];
 
 // Управляет ТОЛЬКО видимостью. Вся логика инициализации — в show*() функциях.
 function showView(name) {
@@ -4723,6 +4942,7 @@ function showDirectory() { showView('directory'); renderDirectoryTable(); showMi
 function showDashboard() { showView('dashboard'); renderDashboard(); }
 function showInflow()    { showView('inflow'); renderInflow(); }
 function showRisks()     { showView('risks'); renderRisks(); }
+function showChannels()  { showView('channels'); renderChannels(); }
 function showAi()        { showView('ai'); }
 
 linkMain.addEventListener('click',e=>{e.preventDefault();showMain();});
@@ -4775,6 +4995,8 @@ window.addEventListener('hashchange', () => {
     showDashboard();
   } else if (location.hash === '#inflow') {
     showInflow();
+  } else if (location.hash === '#channels') {
+    showChannels();
   } else if (location.hash === '#risks') {
     showRisks();
   } else if (location.hash === '#ai') {
@@ -4796,6 +5018,8 @@ if (location.hash === '#history') {
   showDirectory();
 } else if (location.hash === '#dashboard') {
   showDashboard();
+} else if (location.hash === '#channels') {
+  showChannels();
 } else if (location.hash === '#risks') {
   showRisks();
 } else if (location.hash === '#ai') {
@@ -6392,6 +6616,9 @@ document.getElementById('inflowCoef').addEventListener('change', e => {
   renderInflow();
 });
 document.getElementById('linkInflow').addEventListener('click', e => { e.preventDefault(); location.hash = '#inflow'; showInflow(); });
+document.getElementById('linkChannels').addEventListener('click', e => { e.preventDefault(); location.hash = '#channels'; showChannels(); });
+document.getElementById('btnChannelsRefresh').addEventListener('click', renderChannels);
+document.getElementById('btnChannelsCsv').addEventListener('click', exportChannelsCsv);
 
 // Ставка прямых для альтернативной модели сальдо на Главной.
 // try/catch — модуль объявлен ниже init(), при раннем вызове константы ещё в TDZ.
