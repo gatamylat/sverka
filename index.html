@@ -582,9 +582,14 @@ body { padding-top: 70px; }
 .ch-how summary{cursor:pointer;font-size:12.5px;color:var(--acc);user-select:none;list-style:none}
 .ch-how summary::-webkit-details-marker{display:none}
 .ch-how[open] summary{color:var(--t2)}
-.ch-how-body{position:absolute;right:20px;z-index:20;max-width:460px;background:var(--srf);border:1px solid var(--brd2);border-radius:10px;box-shadow:0 8px 32px rgba(30,25,10,.12);padding:12px 16px;font-size:13px}
-.ch-how-body p{margin:7px 0}
 .ch-how{position:relative}
+.ch-how-body{position:absolute;right:0;top:26px;z-index:30;width:460px;max-width:min(460px,calc(100vw - 48px));background:var(--srf);border:1px solid var(--brd2);border-radius:10px;box-shadow:0 8px 32px rgba(30,25,10,.14);padding:14px 18px;font-size:13.5px;line-height:1.55}
+.ch-how-body p{margin:8px 0}
+/* поповер формулы на KPI-плашке */
+.ch-kpi .chbox.clickable{cursor:pointer}
+.ch-formula{position:absolute;z-index:30;width:440px;max-width:min(440px,calc(100vw - 48px));background:var(--srf);border:1px solid var(--brd2);border-radius:10px;box-shadow:0 8px 32px rgba(30,25,10,.14);padding:13px 16px;font-size:13px;line-height:1.6}
+.ch-formula .frm{font-family:monospace;font-size:12.5px;background:rgba(40,35,20,.05);border-radius:6px;padding:6px 9px;margin:6px 0}
+.ch-formula .cls{float:right;cursor:pointer;color:var(--t3)}
 .ch-tip{position:absolute;z-index:15;background:var(--t1);color:var(--bg);border-radius:8px;padding:7px 11px;font-size:12px;line-height:1.5;pointer-events:none;white-space:nowrap;box-shadow:0 8px 20px rgba(30,25,10,.2)}
 .ch-tip b{color:#fff}
 .ch-tblwrap{max-width:900px}
@@ -1063,12 +1068,19 @@ td.spark-cell canvas{display:block}
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
       <h3 style="margin:0">Оборот остатка себестоимости</h3>
       <div class="ch-legend" style="margin:0"><span><i style="background:#1A7AE6"></i>Прямые</span><span><i style="background:#A68960"></i>Непрямые</span><span><i style="background:none;border-top:2px dashed #C4C3BE;width:16px;height:0;vertical-align:4px"></i>норма прошлого года</span></div>
-      <details class="ch-how" style="margin-left:auto">
+      <div class="ai-period" id="chTurnScale" style="margin-left:auto">
+        <button data-m="12">12</button>
+        <button data-m="24" class="active">24</button>
+        <button data-m="all">Все</button>
+        <button data-m="yoy">Год к году</button>
+      </div>
+      <details class="ch-how" ontoggle="if(this.open){const f=document.querySelector('.ch-formula'); if(f) f.remove();}">
         <summary>ⓘ как читать</summary>
         <div class="ch-how-body">
           <p><b>Оборот</b> — за сколько месяцев канал доделал бы свой остаток себестоимости при темпе этого месяца: <i>остаток СС канала ÷ прирост ССФакт канала в месяц</i>.</p>
           <p><b>Ниже — быстрее.</b> Линия выше пунктира своей нормы — канал доделывает медленнее, чем в прошлом году; ниже — быстрее.</p>
           <p><b>Зачем два канала раздельно.</b> Если замедлилась только одна линия — дело не в мощности производства, а в том, что отличает каналы: источник финансирования или приоритеты. Если обе — причина общая (люди, сезон, учёт).</p>
+          <p><b>Подсказка при наведении на график.</b> «Прямые/Непрямые» — те же два канала; <i>темп</i> — сколько затрат проведено по договорам канала за этот месяц (скорость «сжигания» работ); <i>остаток</i> — сколько себестоимости оставалось доделать по каналу на конец месяца; первое число — их частное: остаток ÷ темп = месяцев до доделки.</p>
           <p><b>Оговорки.</b> Это оборот <i>проводок затрат</i>, не физики цеха: бухгалтерия проводит пачками, поэтому линии сглажены по 3 месяцам (точка — среднее с двумя предыдущими). Разрыв линии — в окне почти не было проводок. В одном из каналов договоров немного, один крупный проект заметно двигает его линию.</p>
         </div>
       </details>
@@ -4378,19 +4390,54 @@ function renderChannelsTurnover(){
   window.__chTurn = t;
   if (!t){ kpi.innerHTML = ''; drawTurnChart(null); return; }
   const f1 = v => v === null ? '—' : v.toFixed(1);
-  const box = (name, cur, norm) => {
+  const box = (ch, name, cur, norm) => {
     const ratio = (cur !== null && norm) ? cur / norm : null;
     const state = ratio === null ? ['', '—'] :
       ratio <= 1.25 ? ['style="color:var(--ok)"', 'в темпе нормы'] :
       ratio <= 1.7  ? ['style="color:var(--warn)"', 'медленнее нормы'] :
                       ['style="color:var(--danger)"', `медленнее в ${ratio.toFixed(1)}×`];
-    return `<div class="chbox" title="Оборот = остаток себестоимости канала ÷ месячный прирост фактической себестоимости канала. Сглажено по 3 месяцам. Норма — медиана помесячных значений прошлого года.">
-      <b ${state[0]}>${f1(cur)} мес</b>
-      <div class="sub">${name}: ${state[1]}<br>норма ${t.prevYear}: ${f1(norm)} мес</div></div>`;
+    return `<div class="chbox clickable" data-ch="${ch}" title="Клик — формула расчёта с цифрами">
+      <b ${state[0]}>${f1(cur)} месяца</b>
+      <div class="sub">${name}: ${state[1]}<br>норма ${t.prevYear}: ${f1(norm)} месяца</div></div>`;
   };
-  kpi.innerHTML = box('Прямые', t.curD, t.normD) + box('Непрямые', t.curI, t.normI);
+  kpi.innerHTML = box('D', 'Прямые', t.curD, t.normD) + box('I', 'Непрямые', t.curI, t.normI);
+  kpi.querySelectorAll('.chbox.clickable').forEach(el =>
+    el.addEventListener('click', () => chShowFormula(el, el.dataset.ch)));
   drawTurnChart(t);
 }
+
+/* поповер с формулой: цифры подставляются из данных в момент клика */
+function chShowFormula(anchor, ch){
+  const t = window.__chTurn;
+  if (!t) return;
+  const how = document.querySelector('#channelsView .ch-how');
+  if (how) how.open = false; // один поповер за раз
+  const old = document.querySelector('.ch-formula');
+  if (old){ old.remove(); if (old.dataset.ch === ch) return; }
+  const p = t.pts[t.pts.length - 1];
+  const name = ch === 'D' ? 'прямых' : 'непрямых';
+  const o = ch === 'D' ? p.oD : p.oI, r = ch === 'D' ? p.rD : p.rI;
+  const raw = ch === 'D' ? p.tD : p.tI, sm = ch === 'D' ? t.curD : t.curI, nrm = ch === 'D' ? t.normD : t.normI;
+  const Mm = v => (v / 1e6).toFixed(1).replace('.', ',');
+  const d = document.createElement('div');
+  d.className = 'ch-formula';
+  d.dataset.ch = ch;
+  d.innerHTML = `<span class="cls">✕</span><b>Как посчитано (${p.key}, канал ${name})</b>
+    <div class="frm">Остаток СС ÷ проведено за месяц =<br>${Mm(o)} млн ÷ ${Mm(r)} млн/мес = <b>${raw === null ? '—' : raw.toFixed(1) + ' месяца'}</b></div>
+    <div><b>Остаток СС</b> — сумма (план − факт, не ниже нуля) по живым договорам канала в последнем снимке.<br>
+    <b>Проведено</b> — прирост ССФакт по договорам канала за месяц.</div>
+    <div style="margin-top:6px">На плашке — среднее за 3 последних месяца: <b>${sm === null ? '—' : sm.toFixed(1) + ' месяца'}</b> (сглаживает пачки проводок).<br>
+    Норма — медиана помесячных значений ${t.prevYear} года: <b>${nrm === null ? '—' : nrm.toFixed(1) + ' месяца'}</b>.</div>`;
+  anchor.style.position = 'relative';
+  anchor.appendChild(d);
+  d.style.left = '0'; d.style.top = (anchor.offsetHeight + 6) + 'px';
+  d.querySelector('.cls').addEventListener('click', e => { e.stopPropagation(); d.remove(); });
+  setTimeout(() => document.addEventListener('click', function h(e){
+    if (!d.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)){ d.remove(); document.removeEventListener('click', h); }
+  }), 0);
+}
+
+let chTurnMode = '24'; // 12 | 24 | all | yoy
 
 function drawTurnChart(t){
   const c = document.getElementById('chTurnChart');
@@ -4405,10 +4452,44 @@ function drawTurnChart(t){
 
   const padL = 44, padR = 12, padT = 10, padB = 26;
   const W = cssWidth - padL - padR, H = cssHeight - padT - padB;
-  const CAP = 18; // месяцев на оси; выше — прижимаем к потолку
-  const vals = [...t.sD, ...t.sI, t.normD, t.normI].filter(v => v !== null).map(v => Math.min(v, CAP));
-  const maxV = Math.max(4, Math.ceil(Math.max(...vals)));
-  const X = i => padL + (t.pts.length === 1 ? W / 2 : W * i / (t.pts.length - 1));
+  const CAP = 18;
+  const yoy = chTurnMode === 'yoy';
+
+  // наборы линий: [{series, color, alpha, year}]
+  let lines = [], labels = [], n = 0;
+  if (!yoy){
+    const k = chTurnMode === 'all' ? t.pts.length : Number(chTurnMode);
+    const from = Math.max(0, t.pts.length - k);
+    const pts = t.pts.slice(from);
+    n = pts.length;
+    labels = pts.map(p => p.key.slice(5) + '.' + p.key.slice(2, 4));
+    lines = [
+      { series: t.sI.slice(from), color: '#A68960', alpha: 1 },
+      { series: t.sD.slice(from), color: '#1A7AE6', alpha: 1 },
+    ];
+    c.__geom = { padL, W, n, mode: 'line', from };
+  } else {
+    const curY = t.lastClosed.slice(0, 4), prvY = String(+curY - 1);
+    const byY = (y, s) => Array.from({ length: 12 }, (_, m) => {
+      const k = y + '-' + String(m + 1).padStart(2, '0');
+      const i = t.pts.findIndex(p => p.key === k);
+      return i >= 0 ? s[i] : null;
+    });
+    n = 12;
+    labels = Array.from({ length: 12 }, (_, m) => String(m + 1).padStart(2, '0'));
+    lines = [
+      { series: byY(prvY, t.sI), color: '#A68960', alpha: .32 },
+      { series: byY(prvY, t.sD), color: '#1A7AE6', alpha: .32 },
+      { series: byY(curY, t.sI), color: '#A68960', alpha: 1 },
+      { series: byY(curY, t.sD), color: '#1A7AE6', alpha: 1 },
+    ];
+    c.__geom = { padL, W, n, mode: 'yoy', curY, prvY };
+  }
+
+  const vals = lines.flatMap(l => l.series).concat(yoy ? [] : [t.normD, t.normI])
+    .filter(v => v !== null).map(v => Math.min(v, CAP));
+  const maxV = Math.max(4, Math.ceil(Math.max(...vals, 1)));
+  const X = i => padL + (n === 1 ? W / 2 : W * i / (n - 1));
   const Y = v => padT + H - H * Math.min(v, CAP) / maxV;
 
   ctx.font = '10px "DM Sans", sans-serif';
@@ -4420,29 +4501,38 @@ function drawTurnChart(t){
     ctx.textAlign = 'right';
     ctx.fillText(v.toFixed(0) + ' мес', padL - 6, y + 3);
   }
-  const step = Math.max(1, Math.ceil(t.pts.length / 11));
+  // якоря направления: даже автору легко прочесть наоборот
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#C4C3BE';
+  ctx.fillText('↑ медленнее', padL + 6, padT + 10);
+  ctx.fillText('↓ быстрее', padL + 6, padT + H - 5);
+  ctx.fillStyle = '#8A8985';
+
+  const step = Math.max(1, Math.ceil(n / 12));
   ctx.textAlign = 'center';
-  t.pts.forEach((p, i) => { if (i % step === 0) ctx.fillText(p.key.slice(5) + '.' + p.key.slice(2, 4), X(i), padT + H + 16); });
+  labels.forEach((lb, i) => { if (i % step === 0) ctx.fillText(lb, X(i), padT + H + 16); });
 
-  const dash = (v, color) => { if (v === null) return;
-    ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = color; ctx.globalAlpha = .45; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(padL, Y(v)); ctx.lineTo(padL + W, Y(v)); ctx.stroke(); ctx.restore(); };
-  dash(t.normD, '#1A7AE6'); dash(t.normI, '#A68960');
+  if (!yoy){
+    const dash = (v, color) => { if (v === null) return;
+      ctx.save(); ctx.setLineDash([5, 5]); ctx.strokeStyle = color; ctx.globalAlpha = .45; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(padL, Y(v)); ctx.lineTo(padL + W, Y(v)); ctx.stroke(); ctx.restore(); };
+    dash(t.normD, '#1A7AE6'); dash(t.normI, '#A68960');
+  }
 
-  const line = (series, color) => {
-    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2;
+  lines.forEach(l => {
+    ctx.save();
+    ctx.globalAlpha = l.alpha;
+    ctx.strokeStyle = l.color; ctx.fillStyle = l.color; ctx.lineWidth = l.alpha < 1 ? 1.5 : 2;
     let open = false;
     ctx.beginPath();
-    series.forEach((v, i) => {
-      if (v === null){ open = false; return; }        // разрыв: почти не было проводок
+    l.series.forEach((v, i) => {
+      if (v === null){ open = false; return; }
       if (!open){ ctx.moveTo(X(i), Y(v)); open = true; } else ctx.lineTo(X(i), Y(v));
     });
     ctx.stroke();
-    series.forEach((v, i) => { if (v !== null){ ctx.beginPath(); ctx.arc(X(i), Y(v), 2.6, 0, 7); ctx.fill(); } });
-  };
-  line(t.sI, '#A68960');
-  line(t.sD, '#1A7AE6');
-  c.__geom = { padL, W, n: t.pts.length };
+    l.series.forEach((v, i) => { if (v !== null){ ctx.beginPath(); ctx.arc(X(i), Y(v), l.alpha < 1 ? 2 : 2.6, 0, 7); ctx.fill(); } });
+    ctx.restore();
+  });
 }
 
 /* тултип по наведению: цифры месяца считаются из данных, в коде только подписи */
@@ -4457,12 +4547,21 @@ function drawTurnChart(t){
     const rect = c.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const i = Math.max(0, Math.min(g.n - 1, Math.round((x - g.padL) / (g.W / Math.max(1, g.n - 1)))));
-    const p = t.pts[i];
     const row = (nm, s, r, o) =>
-      `${nm}: <b>${s === null ? 'нет проводок' : s.toFixed(1) + ' мес'}</b> · темп ${Mm(r)} млн/мес · остаток ${Mm(o)} млн`;
-    tip.innerHTML = `<b>${p.key}</b><br>` + row('Прямые', t.sD[i], p.rD, p.oD) + '<br>' + row('Непрямые', t.sI[i], p.rI, p.oI);
+      `${nm}: <b>${s === null ? 'нет проводок' : s.toFixed(1) + ' месяца'}</b> · проведено ${Mm(r)} млн/мес · остаток ${Mm(o)} млн`;
+    if (g.mode === 'yoy'){
+      const mm = String(i + 1).padStart(2, '0');
+      const at = y => { const j = t.pts.findIndex(p => p.key === y + '-' + mm); return j >= 0 ? j : null; };
+      const line = (y) => { const j = at(y); if (j === null) return `${y}: нет данных`;
+        const p = t.pts[j];
+        return row('Прямые ' + y.slice(2), t.sD[j], p.rD, p.oD) + '<br>' + row('Непрямые ' + y.slice(2), t.sI[j], p.rI, p.oI); };
+      tip.innerHTML = `<b>месяц ${mm}</b><br>` + line(g.curY) + '<br>' + line(g.prvY);
+    } else {
+      const p = t.pts[g.from + i];
+      tip.innerHTML = `<b>${p.key}</b><br>` + row('Прямые', t.sD[g.from + i], p.rD, p.oD) + '<br>' + row('Непрямые', t.sI[g.from + i], p.rI, p.oI);
+    }
     tip.style.display = '';
-    tip.style.left = Math.min(x + 14, rect.width - 290) + 'px';
+    tip.style.left = Math.min(x + 14, rect.width - 330) + 'px';
     tip.style.top = (e.clientY - rect.top - 10) + 'px';
   });
   c.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
@@ -4566,6 +4665,12 @@ function chInitNotesOnce(){
     b.classList.add('active');
     chMode = b.dataset.mode;
     renderChannels();
+  }));
+  document.querySelectorAll('#chTurnScale button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#chTurnScale button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    chTurnMode = b.dataset.m;
+    drawTurnChart(window.__chTurn);
   }));
   document.querySelectorAll('#chScale button').forEach(b => b.addEventListener('click', () => {
     document.querySelectorAll('#chScale button').forEach(x => x.classList.remove('active'));
