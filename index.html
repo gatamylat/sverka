@@ -3451,7 +3451,8 @@ const exportJSON = () => {
         pfThreshold: Number(localStorage.getItem(LS_THR) || 0),
         histChecks: JSON.parse(localStorage.getItem(HIST_CHECKS_LS) || '{}'),
         excluded: JSON.parse(localStorage.getItem('inflowExcludedV1') || '[]'),
-        indirectFactMonth: localStorage.getItem('indirectFactMonth') || '5017000'
+        indirectFactMonth: localStorage.getItem('indirectFactMonth') || '5017000',
+        inflowWindowDays: localStorage.getItem('inflowWindowDays') || ''
       }
     }
   };
@@ -3490,6 +3491,7 @@ const importJSON = file => {
           localStorage.setItem(HIST_CHECKS_LS, JSON.stringify(s.histChecks || {}));
           if (Array.isArray(s.excluded)) localStorage.setItem('inflowExcludedV1', JSON.stringify(s.excluded));
           if (s.indirectFactMonth) localStorage.setItem('indirectFactMonth', s.indirectFactMonth);
+          if (s.inflowWindowDays) localStorage.setItem('inflowWindowDays', s.inflowWindowDays);
         }
         
         showToast('✅ Полный импорт завершён: ' + store.length + ' импортов, ' + pfStore.length + ' сверок ПФ', 'success');
@@ -5533,6 +5535,15 @@ function loadIndirectFact() {
   const v = parseFloat(localStorage.getItem(INDIRECT_FACT_KEY));
   return (isFinite(v) && v > 0) ? v : INDIRECT_FACT_DEFAULT;
 }
+
+/* Окно усреднения прямых: сохраняется между сессиями и используется
+   ОДНИМ значением везде — и на Входе, и в «Сальдо (t)» Истории. */
+const INFLOW_WINDOW_KEY     = 'inflowWindowDays';
+const INFLOW_WINDOW_DEFAULT = 90;
+function loadInflowWindow() {
+  const v = parseInt(localStorage.getItem(INFLOW_WINDOW_KEY), 10);
+  return (isFinite(v) && v >= 30 && v <= 365) ? v : INFLOW_WINDOW_DEFAULT;
+}
 const DAYS_IN_MONTH   = 30.44;
 const BREAK_PCT       = 0.30;   // >30% изменения числа договоров между снимками — разрыв ряда
 
@@ -5663,10 +5674,14 @@ function computeInflow(opts) {
   const BASE_IDX = 1;                      // первый снимок, участвующий в расчёте
   for (let i = BASE_IDX + 1; i < snaps.length; i++) {
     const prevN = counts[i - 1] || 1;
-    const delta = Math.abs(counts[i] - prevN) / prevN;
+    // Разрыв ряда — только ПАДЕНИЕ числа живых договоров (>30%): массовая чистка
+    // ломает сопоставимость ССФакт. Рост числа разрывом не считается — вернувшиеся
+    // и новые договоры корректно учитываются через первое появление, а выброс
+    // «восстановительных» интервалов раньше незаметно сжимал окно усреднения.
+    const drop  = (prevN - counts[i]) / prevN;
     const days  = dayDiff(snaps[i - 1].date, snaps[i].date);
-    const brk   = delta > BREAK_PCT;
-    if (brk) breaks.push({ idx: i, date: snaps[i].date, from: counts[i - 1], to: counts[i], pct: delta });
+    const brk   = drop > BREAK_PCT;
+    if (brk) breaks.push({ idx: i, date: snaps[i].date, from: counts[i - 1], to: counts[i], pct: drop });
     intervals.push({ i, from: snaps[i - 1].date, to: snaps[i].date, days, break: brk });
   }
 
@@ -5850,7 +5865,14 @@ function renderInflow() {
   const indInput = document.getElementById('inflowIndirect');
   if (indInput && !indInput.value) indInput.value = String(loadIndirectFact());
 
-  const windowDays = Number(document.getElementById('inflowWindow').value) || 90;
+  // окно: один раз при старте подставляем сохранённое значение поверх HTML-дефолта
+  const winInput = document.getElementById('inflowWindow');
+  if (winInput && !winInput.dataset.restored) {
+    winInput.dataset.restored = '1';
+    winInput.value = String(loadInflowWindow());
+  }
+
+  const windowDays = Number(winInput && winInput.value) || INFLOW_WINDOW_DEFAULT;
   const res = computeInflow({ windowDays });
   __inflow = res;
 
@@ -6262,7 +6284,12 @@ function exportInflowCsv() {
 
 document.getElementById('btnInflowRefresh').addEventListener('click', () => { renderInflow(); showToast('Пересчитано', 'success'); });
 document.getElementById('btnInflowCsv').addEventListener('click', exportInflowCsv);
-document.getElementById('inflowWindow').addEventListener('change', renderInflow);
+document.getElementById('inflowWindow').addEventListener('change', () => {
+  const v = Number(document.getElementById('inflowWindow').value);
+  if (isFinite(v) && v >= 30 && v <= 365) localStorage.setItem(INFLOW_WINDOW_KEY, String(v));
+  renderInflow();
+  buildHistory(); // «Сальдо (t)» в Истории считается тем же окном — пересобираем сразу
+});
 document.getElementById('inflowIndirect').addEventListener('change', e => {
   const v = parseFloat(e.target.value);
   localStorage.setItem(INDIRECT_FACT_KEY, (isFinite(v) && v > 0) ? String(v) : String(INDIRECT_FACT_DEFAULT));
@@ -6285,9 +6312,10 @@ function inflowSnapshot() {
   try {
     // подпись состояния: новый импорт или смена коэффициента сбрасывают кеш
     const sig = store.length + '|' + (store.length ? store[store.length - 1].date : '') + '|'
-              + (localStorage.getItem('dashCoef') || '') + '|' + loadIndirectFact();
+              + (localStorage.getItem('dashCoef') || '') + '|' + loadIndirectFact()
+              + '|' + loadInflowWindow();
     if (__inflowCache && __inflowSig === sig) return __inflowCache;
-    const r = computeInflow({ windowDays: 90 });
+    const r = computeInflow({ windowDays: loadInflowWindow() }); // то же окно, что на Входе
     __inflowSig = sig;
     __inflowCache = r.ok ? r : null;
     return __inflowCache;
