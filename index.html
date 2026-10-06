@@ -1427,7 +1427,7 @@ function isDirectContract(num){
 }
 (function seedDirectCustomers(){
   if (localStorage.getItem('directSeedV1')) return;
-  const PREFIXES = ['26-07', '25-45', '25-43'];
+  const PREFIXES = ['26-07', '25-45', '25-43', '26-09-02', '26-09-03']; // 26-09-02/03 — проданы менеджерами салона, но договор на Массивбурге
   let changed = false;
   try {
     store.forEach(imp => (imp.data || []).forEach(r => {
