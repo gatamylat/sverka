@@ -1131,10 +1131,10 @@ td.spark-cell canvas{display:block}
           🟠 <b>Закуплено, ждёт</b> — был один-два всплеска затрат (обычно закупка материалов, возможно частичная) и затем тишина ≥8 недель. Деньги уже вложены в материал, который лежит и может терять кондицию.<br>
           🟢 <b>В работе</b> — затраты идут, движение было в последние 8 недель.<br>
           🔴 <b>Застряло в работе</b> — производство начато (затраты шли не раз), но движения нет ≥8 недель.<br>
-          🟣 <b>Хвост</b> — готовность ≥80%: монтаж, доделки, мелкие доборы.</p>
+          🟣 <b>Хвост</b> — потрачено ≥80% плановой СС: монтаж, доделки, мелкие доборы.</p>
           <p><b>Причины остановок</b> из данных не видны (стройготовность, согласование чертежей, приоритеты цеха) — пишите их в «Прим.» прямо в таблице, они сохраняются в Справочник.</p>
           <p><b>Скорость чистого производства</b> — медиана прироста затрат в % от плановой себестоимости за месяц, только по интервалам, где затраты реально шли. Показывает, быстрее или медленнее прошлогоднего пилится ОДИН заказ, без учёта простоев.</p>
-          <p><b>Готовность</b> = ССФакт ÷ плановая СС. <b>Остаток СС</b> = плановая СС − ССФакт. <b>Без движения</b> — дней без изменения ССФакт. <b>Траектория</b> — готовность 0→100% по снимкам архива.</p>
+          <p><b>Потрачено СС</b> = ССФакт ÷ плановая СС — доля плана, проведённая затратами. С физической готовностью изделия совпадает лишь условно: при перерасходе затраты превышают план, при экономии изделие готово раньше 100%. Сданные договоры уходят из выгрузки и в таблице не показываются. <b>Остаток СС</b> = плановая СС − ССФакт. <b>Без движения</b> — дней без изменения ССФакт. <b>Траектория</b> — та же доля 0→100% по снимкам архива.</p>
         </div>
       </details>
     </div>
@@ -4839,6 +4839,11 @@ function computeLifecycle(){
   // когорты этапа согласования
   const init = new Set();
   snaps[0].data.forEach(r => init.add(String(r.Номер).trim()));
+  const lastLive = new Set();
+  last.data.forEach(r => {
+    const n = String(r.Номер).trim();
+    if (n && !excl.has(n) && r.__status !== 'deleted') lastLive.add(n);
+  });
   const cohorts = new Map();
   traj.forEach((h, n) => {
     if (init.has(n)) return;
@@ -4848,11 +4853,12 @@ function computeLifecycle(){
     const thr = Math.max(50000, 0.05 * finalB);
     let started = null;
     for (const p of h){ if (p.f >= thr){ started = p.d; break; } }
-    if (!cohorts.has(key)) cohorts.set(key, { total: 0, started: [], waiting: [] });
+    if (!cohorts.has(key)) cohorts.set(key, { total: 0, started: [], waiting: [], gone: [] });
     const c = cohorts.get(key);
     c.total++;
     if (started) c.started.push({ num: n, days: Math.round(day(started) - day(h[0].d)) });
-    else c.waiting.push(n);
+    else if (lastLive.has(n)) c.waiting.push(n);   // ждёт — только если договор ЖИВ в последнем снимке
+    else c.gone.push(n);                            // выбыл из выгрузки (сдан/снят), затрат не зафиксировано
   });
 
   return { rows, spNow, spPrev, speeds, cohorts: [...cohorts.entries()].sort(), today };
@@ -4882,11 +4888,24 @@ function renderCycle(){
     renderCycle();
   }));
 
-  const cell = s => s && s.v ? `<b>${s.v.med.toFixed(0)}%/мес</b><br><span style="color:var(--t2)">цикл ≈ ${(100/s.v.med).toFixed(1)} мес · ${s.v.n} инт.</span>` : '<span style="color:var(--t3)">мало данных</span>';
-  spd.innerHTML = `<b>Скорость чистого производства</b> <span class="cy-th-tip" title="Медиана прироста ССФакт в % от плановой СС за месяц — только по интервалам, где затраты реально шли. Сравнение периодов показывает, ускоряется или замедляется само производство.">ⓘ</span>
-    <table style="margin-top:6px;max-width:640px"><tr>${res.speeds.map(s => `<th>${s.label}</th>`).join('')}</tr>
-    <tr>${res.speeds.map(s => `<td style="text-align:center;line-height:1.45">${cell(s)}</td>`).join('')}</tr></table>
-    ${res.spNow && res.spPrev ? `<div style="margin-top:6px">${res.spNow.med < res.spPrev.med * 0.8 ? '<span style="color:var(--danger)">Сам процесс производства идёт медленнее прошлогоднего.</span>' : res.spNow.med > res.spPrev.med * 1.2 ? '<span style="color:var(--ok)">Производство идёт быстрее прошлогоднего.</span>' : 'Темп сопоставим с прошлым годом.'}</div>` : ''}`;
+  const prior = res.spPrev ? res.spPrev.med : null;
+  const spCard = (s, isBase) => {
+    if (!s.v) return `<div class="chbox"><b style="color:var(--t3)">—</b><div class="sub">${s.label}<br>мало данных</div></div>`;
+    const m = s.v.med;
+    let col = 'var(--t1)';
+    if (!isBase && prior){
+      col = m >= prior * 0.9 ? 'var(--ok)' : m >= prior * 0.7 ? 'var(--warn)' : 'var(--danger)';
+    }
+    return `<div class="chbox" title="Медиана прироста ССФакт в % плановой СС за месяц по движущимся интервалам периода «${s.label}»">
+      <b style="color:${col}">${m.toFixed(0)}%<span style="font-size:12px;font-weight:500;color:var(--t2)"> /мес</span></b>
+      <div class="sub"><b>${s.label}</b> · цикл ≈ ${(100/m).toFixed(1)} мес<br>${s.v.n} интервалов</div></div>`;
+  };
+  spd.innerHTML = `<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+      <b style="font-size:15px;color:var(--t1)">Скорость чистого производства</b>
+      <span class="cy-th-tip" title="Сколько процентов плановой себестоимости заказ набирает за месяц, когда затраты по нему реально идут (простои исключены). 33%/мес значит: заказ в работе делается ~3 месяца. Цвет — сравнение с прошлым годом: зелёный — не хуже, оранжевый — заметно медленнее, красный — сильно медленнее.">как считается ⓘ</span>
+    </div>
+    <div class="ch-kpi" style="margin-top:8px">${res.speeds.map((s, i) => spCard(s, i === res.speeds.length - 1)).join('')}</div>
+    ${res.spNow && res.spPrev ? `<div style="margin-top:8px;font-size:13.5px">${res.spNow.med < res.spPrev.med * 0.8 ? '<span style="color:var(--danger)"><b>Сам процесс производства идёт медленнее прошлогоднего.</b></span>' : res.spNow.med > res.spPrev.med * 1.2 ? '<span style="color:var(--ok)"><b>Производство идёт быстрее прошлогоднего.</b></span>' : '<b>Темп сопоставим с прошлым годом.</b>'} Читается слева направо: короткие окна — что происходит сейчас, длинные — усреднённая история.</div>` : ''}`;
 
   // таблица
   const tbl = document.createElement('table');
@@ -4894,10 +4913,10 @@ function renderCycle(){
   [['Договор',''],
    ['Канал','Прямой заказчик или через посредника — флаг «Прямой» в Справочнике'],
    ['Стадия','Определяется по траектории ССФакт — см. «ⓘ как читать»'],
-   ['Готовность','ССФакт ÷ плановая СС (при её отсутствии — предварительная). Сколько себестоимости уже проведено'],
+   ['Потрачено СС','ССФакт ÷ плановая СС — доля плана, уже проведённая затратами. Это НЕ физическая готовность изделия: при перерасходе процент был бы выше 100, при экономии изделие готово раньше 100%'],
    ['Остаток СС','Плановая СС − ССФакт: сколько себестоимости осталось провести до готовности'],
    ['Без движения','Дней с последнего изменения ССФакт больше чем на 20 тыс. (для «ждёт старта» — дней с появления в выгрузке)'],
-   ['Траектория','Готовность 0→100% по снимкам архива; наведите — детали'],
+   ['Траектория','Доля потраченной СС 0→100% по снимкам архива; наведите — детали'],
    ['Прим.','Примечание из Справочника договоров — здесь только для чтения'],
    ['Заметка цикла','Редактируется здесь: причина остановки, состояние материалов. Хранится отдельно от Справочника, входит в полный бэкап']
   ].forEach(([h, tip]) => {
@@ -4947,7 +4966,7 @@ function renderCycle(){
       });
       ctx.stroke();
     }
-    cv.title = `готовность ${Math.round(r.ready*100)}% · движений затрат: ${r.moves} · последнее: ${r.lastMove ? fmtDate(r.lastMove) : 'не было'}`;
+    cv.title = `потрачено ${Math.round(r.ready*100)}% плановой СС · движений затрат: ${r.moves} · последнее: ${r.lastMove ? fmtDate(r.lastMove) : 'не было'}`;
     tdSp.appendChild(cv);
     tr.appendChild(tdSp);
     // Прим. из Справочника — только чтение
@@ -4975,8 +4994,13 @@ function renderCycle(){
   // когорты
   const t2 = document.createElement('table');
   const h2 = document.createElement('tr');
-  ['Когорта входа','Договоров','Начали производство','Медиана ожидания, дн','Ещё ждут'].forEach(h =>
-    h2.appendChild(Object.assign(document.createElement('th'), { textContent: h })));
+  [['Когорта входа',''],['Договоров',''],['Начали производство',''],['Медиана ожидания, дн',''],
+   ['Ещё ждут','Только договоры, живые в последней выгрузке. Выбывшие без зафиксированных затрат показаны в составе когорты серым']].forEach(([h, tip]) => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    if (tip){ th.title = tip; th.className = 'cy-th-tip'; }
+    h2.appendChild(th);
+  });
   t2.appendChild(h2);
   res.cohorts.forEach(([k, c]) => {
     const tr = document.createElement('tr');
@@ -5006,7 +5030,10 @@ function renderCycle(){
       .map(x => `<div>${x.num}${nameOf(x.num)} — ждал ${x.days} дн</div>`).join('');
     const waitingHtml = c.waiting
       .map(n => `<div style="color:var(--danger)">${n}${nameOf(n)} — <b>ещё ждёт</b></div>`).join('');
-    td.innerHTML = (waitingHtml ? `<div style="margin-bottom:6px">${waitingHtml}</div>` : '') + startedHtml;
+    const goneHtml = (c.gone && c.gone.length)
+      ? `<div style="margin-top:6px;color:var(--t3)">${c.gone.map(n => `${n}${nameOf(n)} — выбыл из выгрузки, затрат не зафиксировано`).join('<br>')}</div>`
+      : '';
+    td.innerHTML = (waitingHtml ? `<div style="margin-bottom:6px">${waitingHtml}</div>` : '') + startedHtml + goneHtml;
     det.appendChild(td);
     t2.appendChild(det);
     tr.addEventListener('click', () => { det.style.display = det.style.display === 'none' ? '' : 'none'; });
