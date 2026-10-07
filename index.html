@@ -590,6 +590,12 @@ body { padding-top: 70px; }
 .ch-formula{position:absolute;z-index:30;width:440px;max-width:min(440px,calc(100vw - 48px));background:var(--srf);border:1px solid var(--brd2);border-radius:10px;box-shadow:0 8px 32px rgba(30,25,10,.14);padding:13px 16px;font-size:13px;line-height:1.6}
 .ch-formula .frm{font-family:monospace;font-size:12.5px;background:rgba(40,35,20,.05);border-radius:6px;padding:6px 9px;margin:6px 0}
 .ch-formula .cls{float:right;cursor:pointer;color:var(--t3)}
+.cy-badge{display:inline-block;padding:2px 9px;border-radius:100px;font-size:11px;font-weight:500;color:#fff;white-space:nowrap}
+.cy-wait{background:#8A8985}.cy-bought{background:#E89A0A}.cy-active{background:#2EBD52}.cy-stuck{background:#E8453A}.cy-tail{background:#A855C7}
+#cycleTableWrap td{vertical-align:middle}
+#cycleTableWrap .cy-note{min-width:160px;text-align:left;cursor:text}
+#cycleTableWrap .cy-note:empty::before{content:'—';color:var(--t3)}
+#cycleTableWrap .cy-note:focus{outline:1.5px solid var(--acc);border-radius:4px}
 .ch-tip{position:absolute;z-index:15;background:var(--t1);color:var(--bg);border-radius:8px;padding:7px 11px;font-size:12px;line-height:1.5;pointer-events:none;white-space:nowrap;box-shadow:0 8px 20px rgba(30,25,10,.2)}
 .ch-tip b{color:#fff}
 .ch-tblwrap{max-width:900px}
@@ -731,6 +737,7 @@ td.spark-cell canvas{display:block}
   <a href="#dashboard" id="linkDash">Дашборд</a>
   <a href="#inflow" id="linkInflow">📥 Вход</a>
   <a href="#channels" id="linkChannels">🛒 Каналы</a>
+  <a href="#cycle" id="linkCycle">⏱ Цикл</a>
   <a href="#risks" id="linkRisks">⚠️ Риски</a>
   <a href="#ai" id="linkAi">🤖 ИИ</a>
   <label id="hideDeletedLabel" style="margin-left:16px;font-size:13px;color:#666;cursor:pointer;user-select:none;">
@@ -1100,6 +1107,50 @@ td.spark-cell canvas{display:block}
     <details id="chRecentBox">
       <summary class="ch-sum">Последние заходы прямых</summary>
       <div id="chRecent" class="ch-tblwrap" style="margin-top:8px"></div>
+    </details>
+  </div>
+</section>
+
+<!-- ============ ЖИЗНЕННЫЙ ЦИКЛ ============ -->
+<section id="cycleView" style="display:none;">
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <h2 style="margin:0">⏱ Жизненный цикл портфеля</h2>
+      <span class="hint" style="margin:0">где лежит остаток себестоимости и почему не превращается в готовые изделия</span>
+      <details class="ch-how" style="margin-left:auto">
+        <summary>ⓘ как читать</summary>
+        <div class="ch-how-body">
+          <p><b>Стадии</b> определяются по траектории ССФакт договора в архиве:</p>
+          <p>⚪ <b>Ждёт старта</b> — затрат ещё нет: согласование, РД, очередь на закупку.<br>
+          🟠 <b>Закуплено, ждёт</b> — был один-два всплеска затрат (обычно закупка материалов) и затем тишина ≥8 недель.<br>
+          🟢 <b>В работе</b> — затраты идут, движение было в последние 8 недель.<br>
+          🔴 <b>Застряло в работе</b> — производство начато (затраты шли не раз), но движения нет ≥8 недель.<br>
+          🟣 <b>Хвост</b> — готовность ≥80%: монтаж, доделки, мелкие доборы.</p>
+          <p><b>Причины остановок</b> из данных не видны (стройготовность, согласование чертежей, приоритеты цеха) — пишите их в «Прим.» прямо в таблице, они сохраняются в Справочник.</p>
+          <p><b>Скорость чистого производства</b> — медиана прироста затрат в % от плановой себестоимости за месяц, только по интервалам, где затраты реально шли. Показывает, быстрее или медленнее прошлогоднего пилится ОДИН заказ, без учёта простоев.</p>
+          <p><b>Траектория</b> в строке — готовность 0→100% по снимкам архива.</p>
+        </div>
+      </details>
+    </div>
+    <div style="margin:8px 0 2px">
+      <button id="btnCycleRefresh" class="small">Обновить</button>
+      <button id="btnCycleCsv" class="small" style="margin-left:8px">CSV ⬳</button>
+    </div>
+    <div id="cycleKpi" class="ch-kpi"></div>
+    <div id="cycleSpeed" class="hint" style="margin-top:8px;font-size:13px"></div>
+  </div>
+
+  <div class="card" style="padding:16px 20px">
+    <h3 style="margin:0 0 4px">Договоры с остатком</h3>
+    <p class="hint" style="margin:0 0 8px">Сортировка: застрявшие и ожидающие — сверху. «Прим.» редактируется прямо здесь и сохраняется в Справочник.</p>
+    <div id="cycleTableWrap" class="ch-tblwrap" style="max-width:1100px"></div>
+  </div>
+
+  <div class="card" style="padding:14px 20px">
+    <details>
+      <summary class="ch-sum">Этап согласования по когортам входа</summary>
+      <p class="hint">Сколько дней договоры ждут от появления в выгрузке до первых затрат (медиана по полугодиям входа). Рост этого числа — удлинение предпроизводственной фазы.</p>
+      <div id="cycleCohorts" class="ch-tblwrap"></div>
     </details>
   </div>
 </section>
@@ -4684,6 +4735,234 @@ function chInitNotesOnce(){
   }));
 })();
 
+/* ══════════════════════════════════════════════════ ЖИЗНЕННЫЙ ЦИКЛ ══════════════════════════════════════════════════════ */
+const CY_STAGES = {
+  stuck:  { label: 'Застряло в работе', cls: 'cy-stuck',  order: 0 },
+  bought: { label: 'Закуплено, ждёт',   cls: 'cy-bought', order: 1 },
+  wait:   { label: 'Ждёт старта',       cls: 'cy-wait',   order: 2 },
+  active: { label: 'В работе',          cls: 'cy-active', order: 3 },
+  tail:   { label: 'Хвост',             cls: 'cy-tail',   order: 4 }
+};
+const CY_STALL_DAYS = 56;      // 8 недель без движения = остановка
+const CY_MOVE_MIN   = 20000;   // прирост меньше — не считается движением
+
+function computeLifecycle(){
+  if (store.length < 2) return null;
+  let __exclArr = null;
+  try { __exclArr = JSON.parse(localStorage.getItem('inflowExcludedV1') || 'null'); } catch(e){}
+  const excl = new Set(__exclArr || []);
+  const snaps = [...store].sort((a, b) => a.date < b.date ? -1 : 1);
+  const day = s => Date.parse(s) / 86400000;
+
+  // траектории живых строк
+  const traj = new Map();
+  snaps.forEach(s => s.data.forEach(r => {
+    const n = String(r.Номер).trim();
+    if (!n || excl.has(n) || r.__status === 'deleted') return;
+    const plan = toNum(r.ССПлан), pred = toNum(r.ССПред);
+    if (!traj.has(n)) traj.set(n, []);
+    traj.get(n).push({ d: s.date, f: toNum(r.ССФакт), b: plan || pred });
+  }));
+
+  const last = snaps[snaps.length - 1];
+  const today = last.date;
+  const rows = [];
+  last.data.forEach(r => {
+    const n = String(r.Номер).trim();
+    if (!n || excl.has(n) || r.__status === 'deleted') return;
+    const plan = toNum(r.ССПлан), pred = toNum(r.ССПред), fact = toNum(r.ССФакт);
+    const base = plan || pred;
+    const ost = Math.max(0, base - fact);
+    if (base <= 0 || ost <= 0) return;
+    const h = traj.get(n) || [];
+    const thr = Math.max(50000, 0.05 * base);
+    // движения
+    let moves = 0, lastMove = null;
+    for (let i = 1; i < h.length; i++){
+      if (h[i].f - h[i-1].f > CY_MOVE_MIN){ moves++; lastMove = h[i].d; }
+    }
+    const sinceMove = lastMove ? Math.round(day(today) - day(lastMove)) : Math.round(day(today) - day(h[0].d));
+    const ready = fact / base;
+    let stage;
+    if (fact < thr) stage = 'wait';
+    else if (ready >= 0.8) stage = 'tail';
+    else if (sinceMove >= CY_STALL_DAYS) stage = moves <= 2 ? 'bought' : 'stuck';
+    else stage = 'active';
+    rows.push({ num: n, base, fact, ost, ready, stage, moves, lastMove, sinceMove,
+      ageDays: Math.round(day(today) - day(h[0].d)),
+      spark: h.map(p => p.b > 0 ? Math.min(1, p.f / p.b) : 0) });
+  });
+
+  // скорость чистого производства: движущиеся интервалы этапа 3
+  const speed = (from, to) => {
+    const rates = [];
+    traj.forEach(h => {
+      for (let i = 1; i < h.length; i++){
+        const a = h[i-1], b = h[i];
+        if (b.d < from || b.d > to || b.b <= 0) continue;
+        const days = day(b.d) - day(a.d);
+        if (days <= 0 || days > 45) continue;
+        const thr = Math.max(50000, 0.05 * b.b);
+        if (a.f < thr || a.f >= 0.8 * b.b) continue;
+        const inc = b.f - a.f;
+        if (inc <= CY_MOVE_MIN) continue;
+        rates.push(inc / days * 30.44 / b.b * 100);
+      }
+    });
+    rates.sort((x, y) => x - y);
+    return rates.length ? { med: rates[Math.floor(rates.length / 2)], n: rates.length } : null;
+  };
+  const d90 = new Date(Date.parse(today) - 90 * 86400000).toISOString().slice(0, 10);
+  const curY = today.slice(0, 4), prvY = String(+curY - 1);
+  const spNow = speed(d90, today);
+  const spPrev = speed(prvY + '-01-01', prvY + '-12-31');
+
+  // когорты этапа согласования
+  const init = new Set();
+  snaps[0].data.forEach(r => init.add(String(r.Номер).trim()));
+  const cohorts = new Map();
+  traj.forEach((h, n) => {
+    if (init.has(n)) return;
+    const fs = h[0].d;
+    const key = fs.slice(0, 4) + (fs.slice(5, 7) <= '06' ? ' H1' : ' H2');
+    const finalB = h[h.length - 1].b || h[0].b;
+    const thr = Math.max(50000, 0.05 * finalB);
+    let started = null;
+    for (const p of h){ if (p.f >= thr){ started = p.d; break; } }
+    if (!cohorts.has(key)) cohorts.set(key, { total: 0, started: [], waiting: 0 });
+    const c = cohorts.get(key);
+    c.total++;
+    if (started) c.started.push(Math.round(day(started) - day(h[0].d)));
+    else c.waiting++;
+  });
+
+  return { rows, spNow, spPrev, cohorts: [...cohorts.entries()].sort(), today };
+}
+
+function renderCycle(){
+  const kpi = document.getElementById('cycleKpi');
+  const spd = document.getElementById('cycleSpeed');
+  const wrap = document.getElementById('cycleTableWrap');
+  const coh = document.getElementById('cycleCohorts');
+  const res = computeLifecycle();
+  window.__cycle = res;
+  if (!res){ kpi.innerHTML = ''; wrap.innerHTML = emptyState('Нужно минимум два импорта'); spd.textContent = ''; coh.innerHTML = ''; return; }
+
+  // KPI по стадиям
+  const agg = {};
+  res.rows.forEach(r => { const a = agg[r.stage] = agg[r.stage] || [0, 0]; a[0] += r.ost; a[1]++; });
+  const tot = res.rows.reduce((s, r) => s + r.ost, 0);
+  kpi.innerHTML = Object.entries(CY_STAGES).sort((a, b) => a[1].order - b[1].order).map(([k, m]) => {
+    const [s, c] = agg[k] || [0, 0];
+    return `<div class="chbox"><b style="color:${{stuck:'var(--danger)',bought:'var(--warn)',wait:'var(--t2)',active:'var(--ok)',tail:'#A855C7'}[k]}">${(s/1e6).toFixed(1).replace('.', ',')} млн</b>
+      <div class="sub"><span class="cy-badge ${m.cls}">${m.label}</span> · ${c} дог. · ${tot ? (s/tot*100).toFixed(0) : 0}% остатка</div></div>`;
+  }).join('');
+
+  const f1 = v => v.toFixed(0);
+  spd.innerHTML = (res.spNow && res.spPrev)
+    ? `<b>Скорость чистого производства</b> (по движущимся заказам): последние 90 дней — <b>${f1(res.spNow.med)}% плановой СС в месяц</b> (цикл ≈ ${(100/res.spNow.med).toFixed(1)} мес, ${res.spNow.n} интервалов) · прошлый год — ${f1(res.spPrev.med)}%/мес (цикл ≈ ${(100/res.spPrev.med).toFixed(1)} мес). ${res.spNow.med < res.spPrev.med * 0.8 ? '<span style="color:var(--danger)">Сам процесс производства идёт медленнее прошлогоднего.</span>' : res.spNow.med > res.spPrev.med * 1.2 ? '<span style="color:var(--ok)">Производство идёт быстрее прошлогоднего.</span>' : 'Темп сопоставим с прошлым годом.'}`
+    : 'Недостаточно данных для оценки скорости производства.';
+
+  // таблица
+  const tbl = document.createElement('table');
+  const trh = document.createElement('tr');
+  ['Договор','Канал','Стадия','Готовность','Остаток','Без движения','Траектория','Прим.'].forEach(h =>
+    trh.appendChild(Object.assign(document.createElement('th'), { textContent: h })));
+  tbl.appendChild(trh);
+  const sorted = [...res.rows].sort((a, b) =>
+    CY_STAGES[a.stage].order - CY_STAGES[b.stage].order || b.ost - a.ost);
+  sorted.forEach(r => {
+    const tr = document.createElement('tr');
+    const info = getContractInfo(r.num);
+    const tdN = document.createElement('td');
+    tdN.style.textAlign = 'left';
+    tdN.textContent = r.num + (info.exists && info.name ? ' · ' + info.name : '');
+    tr.appendChild(tdN);
+    const tdC = document.createElement('td');
+    tdC.textContent = isDirectContract(r.num) ? 'прямой' : 'непрям.';
+    tr.appendChild(tdC);
+    const tdS = document.createElement('td');
+    tdS.style.textAlign = 'left';
+    tdS.innerHTML = `<span class="cy-badge ${CY_STAGES[r.stage].cls}">${CY_STAGES[r.stage].label}</span>`;
+    tr.appendChild(tdS);
+    [Math.round(r.ready*100) + '%', sep(Math.round(r.ost)), (r.lastMove ? r.sinceMove : r.ageDays) + ' дн'].forEach(v => {
+      const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+    // спарклайн готовности
+    const tdSp = document.createElement('td');
+    const cv = document.createElement('canvas');
+    const w = 90, hgt = 22, dpr = window.devicePixelRatio || 1;
+    cv.width = w * dpr; cv.height = hgt * dpr;
+    cv.style.width = w + 'px'; cv.style.height = hgt + 'px';
+    const ctx = cv.getContext('2d');
+    if (ctx && r.spark.length){
+      ctx.scale(dpr, dpr);
+      ctx.strokeStyle = isDirectContract(r.num) ? '#1A7AE6' : '#A68960';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      r.spark.forEach((v, i) => {
+        const x = 3 + (w - 6) * (r.spark.length === 1 ? 0.5 : i / (r.spark.length - 1));
+        const y = hgt - 3 - (hgt - 6) * v;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+      ctx.stroke();
+    }
+    cv.title = `готовность ${Math.round(r.ready*100)}% · движений затрат: ${r.moves} · последнее: ${r.lastMove ? fmtDate(r.lastMove) : 'не было'}`;
+    tdSp.appendChild(cv);
+    tr.appendChild(tdSp);
+    // примечание — редактируется, пишется в справочник
+    const tdNote = document.createElement('td');
+    tdNote.className = 'cy-note';
+    tdNote.contentEditable = true;
+    tdNote.textContent = (info.exists && info.comment) ? info.comment : '';
+    tdNote.addEventListener('blur', () => {
+      if (!contractsDirectory[r.num]) contractsDirectory[r.num] = { name: '', comment: '' };
+      contractsDirectory[r.num].comment = tdNote.textContent.trim();
+      saveContractsDirectory();
+    });
+    tr.appendChild(tdNote);
+    tbl.appendChild(tr);
+  });
+  wrap.innerHTML = '';
+  wrap.appendChild(tbl);
+
+  // когорты
+  const t2 = document.createElement('table');
+  const h2 = document.createElement('tr');
+  ['Когорта входа','Договоров','Начали производство','Медиана ожидания, дн','Ещё ждут'].forEach(h =>
+    h2.appendChild(Object.assign(document.createElement('th'), { textContent: h })));
+  t2.appendChild(h2);
+  res.cohorts.forEach(([k, c]) => {
+    const tr = document.createElement('tr');
+    const med = c.started.length ? c.started.sort((a,b)=>a-b)[Math.floor(c.started.length/2)] : null;
+    [k, c.total, c.started.length, med === null ? '—' : med, c.waiting].forEach((v, j) => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      if (j === 0) td.style.textAlign = 'left';
+      tr.appendChild(td);
+    });
+    t2.appendChild(tr);
+  });
+  coh.innerHTML = '';
+  coh.appendChild(t2);
+}
+
+function exportCycleCsv(){
+  const res = window.__cycle || computeLifecycle();
+  if (!res){ showToast('Нет данных', 'warning'); return; }
+  const lines = ['\uFEFFДоговор;Наименование;Канал;Стадия;Готовность,%;Остаток;Дней без движения;Движений;Примечание'];
+  res.rows.forEach(r => {
+    const info = getContractInfo(r.num);
+    lines.push([r.num, (info.exists ? (info.name||'') : '').replace(/;/g, ','), isDirectContract(r.num) ? 'прямой' : 'непрямой',
+      CY_STAGES[r.stage].label, Math.round(r.ready*100), Math.round(r.ost), r.lastMove ? r.sinceMove : r.ageDays, r.moves,
+      (info.exists ? (info.comment||'') : '').replace(/;/g, ',')].join(';'));
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = `lifecycle_${res.today}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 /* ════════════════════════════════════════════════════════ РИСКИ ══════════════════════════════════════════════════════════ */
 const RISK_SETTINGS_LS = 'riskSettingsV1';
 const RISK_META = {
@@ -5493,7 +5772,7 @@ function isRealDate(iso){
 /* ======== ROUTER (#main / #history / #pf / #coefficients) ======== */
 
 // Все панели-секции (не .card главного экрана)
-const PANEL_IDS = ['historyView', 'pfView', 'coefView', 'directoryView', 'dashboardView', 'inflowView', 'channelsView', 'risksView', 'aiView'];
+const PANEL_IDS = ['historyView', 'pfView', 'coefView', 'directoryView', 'dashboardView', 'inflowView', 'channelsView', 'cycleView', 'risksView', 'aiView'];
 
 // Управляет ТОЛЬКО видимостью. Вся логика инициализации — в show*() функциях.
 function showView(name) {
@@ -5521,6 +5800,7 @@ function showDashboard() { showView('dashboard'); renderDashboard(); }
 function showInflow()    { showView('inflow'); renderInflow(); }
 function showRisks()     { showView('risks'); renderRisks(); }
 function showChannels()  { showView('channels'); renderChannels(); }
+function showCycle()     { showView('cycle'); renderCycle(); }
 function showAi()        { showView('ai'); }
 
 linkMain.addEventListener('click',e=>{e.preventDefault();showMain();});
@@ -5575,6 +5855,8 @@ window.addEventListener('hashchange', () => {
     showInflow();
   } else if (location.hash === '#channels') {
     showChannels();
+  } else if (location.hash === '#cycle') {
+    showCycle();
   } else if (location.hash === '#risks') {
     showRisks();
   } else if (location.hash === '#ai') {
@@ -5598,6 +5880,8 @@ if (location.hash === '#history') {
   showDashboard();
 } else if (location.hash === '#channels') {
   showChannels();
+} else if (location.hash === '#cycle') {
+  showCycle();
 } else if (location.hash === '#risks') {
   showRisks();
 } else if (location.hash === '#ai') {
@@ -7216,6 +7500,9 @@ document.getElementById('inflowCoef').addEventListener('change', e => {
 });
 document.getElementById('linkInflow').addEventListener('click', e => { e.preventDefault(); location.hash = '#inflow'; showInflow(); });
 document.getElementById('linkChannels').addEventListener('click', e => { e.preventDefault(); location.hash = '#channels'; showChannels(); });
+document.getElementById('linkCycle').addEventListener('click', e => { e.preventDefault(); location.hash = '#cycle'; showCycle(); });
+document.getElementById('btnCycleRefresh').addEventListener('click', renderCycle);
+document.getElementById('btnCycleCsv').addEventListener('click', exportCycleCsv);
 document.getElementById('btnChannelsRefresh').addEventListener('click', renderChannels);
 document.getElementById('btnChannelsCsv').addEventListener('click', exportChannelsCsv);
 
