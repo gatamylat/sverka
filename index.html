@@ -595,6 +595,9 @@ body { padding-top: 70px; }
 #cycleTableWrap td{vertical-align:middle}
 #cycleTableWrap table tr:nth-child(even):not(:first-child) td{background:rgba(40,35,20,.035)}
 #cycleTableWrap table tr:hover:not(:first-child) td{background:var(--acc-bg)}
+.cy-kpi{cursor:pointer;border:1.5px solid var(--brd2);transition:all .15s var(--ease)}
+.cy-kpi:active{transform:scale(.98)}
+.cy-kpi-on{border-color:var(--acc);background:var(--acc-bg)}
 .cy-th-tip{cursor:help;text-decoration:underline dotted rgba(40,35,20,.35);text-underline-offset:3px}
 #cycleTableWrap .cy-note{min-width:160px;text-align:left;cursor:text}
 #cycleTableWrap .cy-note:empty::before{content:'—';color:var(--t3)}
@@ -3674,7 +3677,8 @@ const exportJSON = () => {
         histChecks: JSON.parse(localStorage.getItem(HIST_CHECKS_LS) || '{}'),
         excluded: JSON.parse(localStorage.getItem('inflowExcludedV1') || '[]'),
         indirectFactMonth: localStorage.getItem('indirectFactMonth') || '5017000',
-        inflowWindowDays: localStorage.getItem('inflowWindowDays') || ''
+        inflowWindowDays: localStorage.getItem('inflowWindowDays') || '',
+        cycleNotes: JSON.parse(localStorage.getItem('cycleNotesV1') || '{}')
       }
     }
   };
@@ -3714,6 +3718,7 @@ const importJSON = file => {
           if (Array.isArray(s.excluded)) localStorage.setItem('inflowExcludedV1', JSON.stringify(s.excluded));
           if (s.indirectFactMonth) localStorage.setItem('indirectFactMonth', s.indirectFactMonth);
           if (s.inflowWindowDays) localStorage.setItem('inflowWindowDays', s.inflowWindowDays);
+          if (s.cycleNotes) { localStorage.setItem('cycleNotesV1', JSON.stringify(s.cycleNotes)); try { cycleNotes = s.cycleNotes; } catch(e){} }
         }
         
         showToast('✅ Полный импорт завершён: ' + store.length + ' импортов, ' + pfStore.length + ' сверок ПФ', 'success');
@@ -4746,6 +4751,10 @@ const CY_STAGES = {
   active: { label: 'В работе',          cls: 'cy-active', order: 3 },
   tail:   { label: 'Хвост',             cls: 'cy-tail',   order: 4 }
 };
+const CY_NOTES_KEY = 'cycleNotesV1';   // заметки вкладки Цикл — отдельно от Прим. справочника
+let cycleNotes = (() => { try { return JSON.parse(localStorage.getItem(CY_NOTES_KEY) || '{}'); } catch(e){ return {}; } })();
+const saveCycleNotes = () => { try { localStorage.setItem(CY_NOTES_KEY, JSON.stringify(cycleNotes)); } catch(e){} };
+let cycleStageFilter = null;           // фильтр по клику на KPI-карточку
 const CY_STALL_DAYS = 56;      // 8 недель без движения = остановка
 const CY_MOVE_MIN   = 20000;   // прирост меньше — не считается движением
 
@@ -4815,10 +4824,17 @@ function computeLifecycle(){
     rates.sort((x, y) => x - y);
     return rates.length ? { med: rates[Math.floor(rates.length / 2)], n: rates.length } : null;
   };
-  const d90 = new Date(Date.parse(today) - 90 * 86400000).toISOString().slice(0, 10);
+  const ago = n => new Date(Date.parse(today) - n * 86400000).toISOString().slice(0, 10);
   const curY = today.slice(0, 4), prvY = String(+curY - 1);
-  const spNow = speed(d90, today);
+  const spNow = speed(ago(90), today);
   const spPrev = speed(prvY + '-01-01', prvY + '-12-31');
+  const speeds = [
+    { label: '30 дн',  v: speed(ago(30), today) },
+    { label: '90 дн',  v: spNow },
+    { label: '180 дн', v: speed(ago(180), today) },
+    { label: '12 мес', v: speed(ago(365), today) },
+    { label: prvY + ' год', v: spPrev }
+  ];
 
   // когорты этапа согласования
   const init = new Set();
@@ -4832,14 +4848,14 @@ function computeLifecycle(){
     const thr = Math.max(50000, 0.05 * finalB);
     let started = null;
     for (const p of h){ if (p.f >= thr){ started = p.d; break; } }
-    if (!cohorts.has(key)) cohorts.set(key, { total: 0, started: [], waiting: 0 });
+    if (!cohorts.has(key)) cohorts.set(key, { total: 0, started: [], waiting: [] });
     const c = cohorts.get(key);
     c.total++;
-    if (started) c.started.push(Math.round(day(started) - day(h[0].d)));
-    else c.waiting++;
+    if (started) c.started.push({ num: n, days: Math.round(day(started) - day(h[0].d)) });
+    else c.waiting.push(n);
   });
 
-  return { rows, spNow, spPrev, cohorts: [...cohorts.entries()].sort(), today };
+  return { rows, spNow, spPrev, speeds, cohorts: [...cohorts.entries()].sort(), today };
 }
 
 function renderCycle(){
@@ -4857,14 +4873,20 @@ function renderCycle(){
   const tot = res.rows.reduce((s, r) => s + r.ost, 0);
   kpi.innerHTML = Object.entries(CY_STAGES).sort((a, b) => a[1].order - b[1].order).map(([k, m]) => {
     const [s, c] = agg[k] || [0, 0];
-    return `<div class="chbox"><b style="color:${{stuck:'var(--danger)',bought:'var(--warn)',wait:'var(--t2)',active:'var(--ok)',tail:'#A855C7'}[k]}">${(s/1e6).toFixed(1).replace('.', ',')} млн</b>
+    return `<div class="chbox cy-kpi${cycleStageFilter === k ? ' cy-kpi-on' : ''}" data-stage="${k}" title="Клик — показать только эту стадию; повторный клик — все">
+      <b style="color:${{stuck:'var(--danger)',bought:'var(--warn)',wait:'var(--t2)',active:'var(--ok)',tail:'#A855C7'}[k]}">${(s/1e6).toFixed(1).replace('.', ',')} млн</b>
       <div class="sub"><span class="cy-badge ${m.cls}">${m.label}</span> · ${c} дог. · ${tot ? (s/tot*100).toFixed(0) : 0}% остатка</div></div>`;
   }).join('');
+  kpi.querySelectorAll('.cy-kpi').forEach(el => el.addEventListener('click', () => {
+    cycleStageFilter = cycleStageFilter === el.dataset.stage ? null : el.dataset.stage;
+    renderCycle();
+  }));
 
-  const f1 = v => v.toFixed(0);
-  spd.innerHTML = (res.spNow && res.spPrev)
-    ? `<b>Скорость чистого производства</b> (по движущимся заказам): последние 90 дней — <b>${f1(res.spNow.med)}% плановой СС в месяц</b> (цикл ≈ ${(100/res.spNow.med).toFixed(1)} мес, ${res.spNow.n} интервалов) · прошлый год — ${f1(res.spPrev.med)}%/мес (цикл ≈ ${(100/res.spPrev.med).toFixed(1)} мес). ${res.spNow.med < res.spPrev.med * 0.8 ? '<span style="color:var(--danger)">Сам процесс производства идёт медленнее прошлогоднего.</span>' : res.spNow.med > res.spPrev.med * 1.2 ? '<span style="color:var(--ok)">Производство идёт быстрее прошлогоднего.</span>' : 'Темп сопоставим с прошлым годом.'}`
-    : 'Недостаточно данных для оценки скорости производства.';
+  const cell = s => s && s.v ? `<b>${s.v.med.toFixed(0)}%/мес</b><br><span style="color:var(--t2)">цикл ≈ ${(100/s.v.med).toFixed(1)} мес · ${s.v.n} инт.</span>` : '<span style="color:var(--t3)">мало данных</span>';
+  spd.innerHTML = `<b>Скорость чистого производства</b> <span class="cy-th-tip" title="Медиана прироста ССФакт в % от плановой СС за месяц — только по интервалам, где затраты реально шли. Сравнение периодов показывает, ускоряется или замедляется само производство.">ⓘ</span>
+    <table style="margin-top:6px;max-width:640px"><tr>${res.speeds.map(s => `<th>${s.label}</th>`).join('')}</tr>
+    <tr>${res.speeds.map(s => `<td style="text-align:center;line-height:1.45">${cell(s)}</td>`).join('')}</tr></table>
+    ${res.spNow && res.spPrev ? `<div style="margin-top:6px">${res.spNow.med < res.spPrev.med * 0.8 ? '<span style="color:var(--danger)">Сам процесс производства идёт медленнее прошлогоднего.</span>' : res.spNow.med > res.spPrev.med * 1.2 ? '<span style="color:var(--ok)">Производство идёт быстрее прошлогоднего.</span>' : 'Темп сопоставим с прошлым годом.'}</div>` : ''}`;
 
   // таблица
   const tbl = document.createElement('table');
@@ -4876,7 +4898,8 @@ function renderCycle(){
    ['Остаток СС','Плановая СС − ССФакт: сколько себестоимости осталось провести до готовности'],
    ['Без движения','Дней с последнего изменения ССФакт больше чем на 20 тыс. (для «ждёт старта» — дней с появления в выгрузке)'],
    ['Траектория','Готовность 0→100% по снимкам архива; наведите — детали'],
-   ['Прим.','Редактируется здесь, сохраняется в Справочник — фиксируйте причину остановки']
+   ['Прим.','Примечание из Справочника договоров — здесь только для чтения'],
+   ['Заметка цикла','Редактируется здесь: причина остановки, состояние материалов. Хранится отдельно от Справочника, входит в полный бэкап']
   ].forEach(([h, tip]) => {
     const th = document.createElement('th');
     th.textContent = h;
@@ -4884,7 +4907,8 @@ function renderCycle(){
     trh.appendChild(th);
   });
   tbl.appendChild(trh);
-  const sorted = [...res.rows].sort((a, b) =>
+  const filtered = cycleStageFilter ? res.rows.filter(r => r.stage === cycleStageFilter) : res.rows;
+  const sorted = [...filtered].sort((a, b) =>
     CY_STAGES[a.stage].order - CY_STAGES[b.stage].order || b.ost - a.ost);
   sorted.forEach(r => {
     const tr = document.createElement('tr');
@@ -4926,15 +4950,21 @@ function renderCycle(){
     cv.title = `готовность ${Math.round(r.ready*100)}% · движений затрат: ${r.moves} · последнее: ${r.lastMove ? fmtDate(r.lastMove) : 'не было'}`;
     tdSp.appendChild(cv);
     tr.appendChild(tdSp);
-    // примечание — редактируется, пишется в справочник
+    // Прим. из Справочника — только чтение
+    const tdDirNote = document.createElement('td');
+    tdDirNote.style.textAlign = 'left';
+    tdDirNote.style.color = 'var(--t2)';
+    tdDirNote.textContent = (info.exists && info.comment) ? info.comment : '';
+    tr.appendChild(tdDirNote);
+    // Заметка цикла — своё хранилище
     const tdNote = document.createElement('td');
     tdNote.className = 'cy-note';
     tdNote.contentEditable = true;
-    tdNote.textContent = (info.exists && info.comment) ? info.comment : '';
+    tdNote.textContent = cycleNotes[r.num] || '';
     tdNote.addEventListener('blur', () => {
-      if (!contractsDirectory[r.num]) contractsDirectory[r.num] = { name: '', comment: '' };
-      contractsDirectory[r.num].comment = tdNote.textContent.trim();
-      saveContractsDirectory();
+      const v = tdNote.textContent.trim();
+      if (v) cycleNotes[r.num] = v; else delete cycleNotes[r.num];
+      saveCycleNotes();
     });
     tr.appendChild(tdNote);
     tbl.appendChild(tr);
@@ -4950,14 +4980,36 @@ function renderCycle(){
   t2.appendChild(h2);
   res.cohorts.forEach(([k, c]) => {
     const tr = document.createElement('tr');
-    const med = c.started.length ? c.started.sort((a,b)=>a-b)[Math.floor(c.started.length/2)] : null;
-    [k, c.total, c.started.length, med === null ? '—' : med, c.waiting].forEach((v, j) => {
+    tr.style.cursor = 'pointer';
+    tr.title = 'Клик — состав когорты';
+    const days = c.started.map(x => x.days).sort((a, b) => a - b);
+    const med = days.length ? days[Math.floor(days.length / 2)] : null;
+    [k, c.total, c.started.length, med === null ? '—' : med].forEach((v, j) => {
       const td = document.createElement('td');
       td.textContent = v;
       if (j === 0) td.style.textAlign = 'left';
       tr.appendChild(td);
     });
+    const tdW = document.createElement('td');
+    tdW.textContent = c.waiting.length;
+    if (c.waiting.length) { tdW.style.color = 'var(--danger)'; tdW.style.fontWeight = '700'; }
+    tr.appendChild(tdW);
     t2.appendChild(tr);
+
+    const det = document.createElement('tr');
+    det.style.display = 'none';
+    const td = document.createElement('td');
+    td.colSpan = 5;
+    td.style.cssText = 'text-align:left;background:var(--bg);font-size:12px;padding:8px 12px';
+    const nameOf = n => { const i = getContractInfo(n); return i.exists && i.name ? ' · ' + i.name : ''; };
+    const startedHtml = [...c.started].sort((a, b) => b.days - a.days)
+      .map(x => `<div>${x.num}${nameOf(x.num)} — ждал ${x.days} дн</div>`).join('');
+    const waitingHtml = c.waiting
+      .map(n => `<div style="color:var(--danger)">${n}${nameOf(n)} — <b>ещё ждёт</b></div>`).join('');
+    td.innerHTML = (waitingHtml ? `<div style="margin-bottom:6px">${waitingHtml}</div>` : '') + startedHtml;
+    det.appendChild(td);
+    t2.appendChild(det);
+    tr.addEventListener('click', () => { det.style.display = det.style.display === 'none' ? '' : 'none'; });
   });
   coh.innerHTML = '';
   coh.appendChild(t2);
@@ -4966,12 +5018,12 @@ function renderCycle(){
 function exportCycleCsv(){
   const res = window.__cycle || computeLifecycle();
   if (!res){ showToast('Нет данных', 'warning'); return; }
-  const lines = ['\uFEFFДоговор;Наименование;Канал;Стадия;Готовность,%;Остаток;Дней без движения;Движений;Примечание'];
+  const lines = ['\uFEFFДоговор;Наименование;Канал;Стадия;Готовность,%;ОстатокСС;Дней без движения;Движений;Прим.справочника;Заметка цикла'];
   res.rows.forEach(r => {
     const info = getContractInfo(r.num);
     lines.push([r.num, (info.exists ? (info.name||'') : '').replace(/;/g, ','), isDirectContract(r.num) ? 'прямой' : 'непрямой',
       CY_STAGES[r.stage].label, Math.round(r.ready*100), Math.round(r.ost), r.lastMove ? r.sinceMove : r.ageDays, r.moves,
-      (info.exists ? (info.comment||'') : '').replace(/;/g, ',')].join(';'));
+      (info.exists ? (info.comment||'') : '').replace(/;/g, ','), (cycleNotes[r.num]||'').replace(/;/g, ',')].join(';'));
   });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
