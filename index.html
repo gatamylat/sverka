@@ -1147,6 +1147,30 @@ td.spark-cell canvas{display:block}
   </div>
 
   <div class="card" style="padding:16px 20px">
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <h3 style="margin:0">Экономика производства</h3>
+      <span class="hint" style="margin:0">сколько цех переваривает в месяц и окупают ли объёмы косвенные расходы</span>
+      <details class="ch-how" style="margin-left:auto">
+        <summary>ⓘ как считается</summary>
+        <div class="ch-how-body">
+          <p><b>Переварено прямых</b> — прирост ССФакт по всем договорам между снимками, приведённый к месяцу. Тот же ряд, что столбец «Прямые ₽» на Главной: интервалы с разрывом ряда исключены.</p>
+          <p><b>Выпуск в отпускных ценах</b> — каждый рубль прироста умножается на наценку конкретного договора (СуммаЗаказа ÷ плановая СС, в разумных пределах от 1 до 5). Там, где наценку посчитать нельзя, берётся средняя по портфелю «по сумме договоров» — та же, что на Главной. Это оценка стоимости произведённого, а не выручка: деньги приходят по своему графику.</p>
+          <p><b>Факт. kз</b> — косвенные ÷ переваренные прямые за период. Показывает, сколько рублей косвенных приходится на рубль прямых при фактическом темпе цеха. Косвенные постоянны, поэтому kз растёт не от «подорожания» производства, а от падения объёма.</p>
+          <p><b>Маржа производства</b> = выпуск − прямые − косвенные. <b>Порог безубыточности</b> = косвенные ÷ (наценка − 1): столько прямых в месяц цех должен переваривать, чтобы выпуск покрыл и прямые, и косвенные.</p>
+          <p>⚠️ Сдельная зарплата разносится в 1С с запаздыванием, поэтому последние месяцы могут занижать прямые и завышать kз — цифры уточняются со следующими выгрузками.</p>
+        </div>
+      </details>
+    </div>
+    <div id="prodEconKpi" class="ch-kpi"></div>
+    <div id="prodEconTbl" class="ch-tblwrap" style="max-width:900px;margin-top:10px"></div>
+    <details style="margin-top:8px">
+      <summary class="ch-sum">По месяцам</summary>
+      <div id="prodEconMonths" class="ch-tblwrap" style="max-width:900px"></div>
+    </details>
+    <p class="hint" id="prodEconNote" style="margin:8px 0 0"></p>
+  </div>
+
+  <div class="card" style="padding:16px 20px">
     <h3 style="margin:0 0 4px">Договоры с остатком</h3>
     <p class="hint" style="margin:0 0 8px">Сортировка: застрявшие и ожидающие — сверху. «Прим.» редактируется прямо здесь и сохраняется в Справочник.</p>
     <div id="cycleTableWrap" class="ch-tblwrap" style="max-width:1100px"></div>
@@ -4864,11 +4888,206 @@ function computeLifecycle(){
   return { rows, spNow, spPrev, speeds, cohorts: [...cohorts.entries()].sort(), today };
 }
 
+/* ─────────────── Экономика производства ───────────────
+   Сколько цех переваривает прямых в месяц, во что это превращается
+   в отпускных ценах и окупают ли объёмы косвенные расходы.
+   Ряд прямых — тот же, что «Прямые ₽» на Главной (прирост ССФакт
+   по интервалам, разрывы исключены); выпуск — прирост × наценка
+   конкретного договора (СуммаЗаказа ÷ плановая СС, в пределах 1–5),
+   где наценки нет — средняя по портфелю «по сумме договоров». */
+function computeProdEcon(){
+  const excl = loadExcluded();
+  const { good: snaps } = validSnapshots();
+  if (snaps.length < 3) return null;
+  const IND = loadIndirectFact();
+
+  // реестр: последняя известная сумма/СС и плановая база каждого договора
+  const reg = new Map();
+  snaps.forEach(sn => sn.data.forEach(r => {
+    const num = String(r.Номер || '').trim();
+    if (!num || excl.has(num)) return;
+    const prev = reg.get(num) || {};
+    reg.set(num, {
+      sum: toNum(r.СуммаЗаказа), ssFact: toNum(r.ССФакт),
+      base: toNum(r.ССПлан) || toNum(r.ССПред) || prev.base || 0
+    });
+  }));
+  let sumOrders = 0, sumSsFact = 0;
+  reg.forEach(c => { sumOrders += c.sum; sumSsFact += c.ssFact; });
+  const kAvg = sumSsFact > 0 ? sumOrders / sumSsFact : 2;      // «по сумме договоров», как на Главной
+  const kOf = num => {
+    const c = reg.get(num);
+    if (c && c.sum > 0 && c.base > 0){ const r = c.sum / c.base; if (r >= 1 && r <= 5) return r; }
+    return kAvg;
+  };
+
+  // первое появление (первичная загрузка приростом не считается — как в computeInflow)
+  const first = new Map();
+  snaps.forEach((sn, idx) => liveRows(sn, excl).forEach(r => {
+    const num = String(r.Номер).trim();
+    if (!first.has(num)) first.set(num, idx);
+  }));
+
+  // интервалы: первый снимок вне расчёта, разрыв — падение числа договоров >30%
+  const counts = snaps.map(sn => liveRows(sn, excl).length);
+  const ivs = [];
+  for (let i = 2; i < snaps.length; i++){
+    const prevN = counts[i - 1] || 1;
+    const drop = (prevN - counts[i]) / prevN;
+    const days = dayDiff(snaps[i - 1].date, snaps[i].date);
+    if (drop > BREAK_PCT || days <= 0){ ivs.push({ to: snaps[i].date, brk: true }); continue; }
+    const prev = new Map(liveRows(snaps[i - 1], excl).map(r => [String(r.Номер).trim(), toNum(r.ССФакт)]));
+    let ss = 0, rev = 0;
+    liveRows(snaps[i], excl).forEach(r => {
+      const num = String(r.Номер).trim();
+      const v = toNum(r.ССФакт);
+      let d = 0;
+      if (prev.has(num)) d = Math.max(0, v - prev.get(num));
+      else if (first.get(num) === i) d = v;   // по-настоящему новый договор
+      if (d > 0){ ss += d; rev += d * kOf(num); }
+    });
+    ivs.push({ to: snaps[i].date, days, ss, rev, brk: false });
+  }
+
+  const agg = sel => {
+    let ss = 0, rev = 0, days = 0, breaks = 0;
+    sel.forEach(iv => { if (iv.brk){ breaks++; return; } ss += iv.ss; rev += iv.rev; days += iv.days; });
+    if (!days) return null;
+    const ssm = ss / days * DAYS_IN_MONTH, revm = rev / days * DAYS_IN_MONTH;
+    return { ssm, revm, days, breaks,
+      markup: ssm > 0 ? revm / ssm : 0,
+      kz: ssm > 0 ? IND / ssm : null,
+      margin: revm - ssm - IND };
+  };
+
+  // помесячно (интервал попадает в месяц своего конца — как на Главной)
+  const byMonth = new Map();
+  ivs.forEach(iv => {
+    const key = monthKey(iv.to);
+    if (!byMonth.has(key)) byMonth.set(key, []);
+    byMonth.get(key).push(iv);
+  });
+  const monthRows = [...byMonth.keys()].sort().map(key => {
+    const sel = byMonth.get(key);
+    const a = agg(sel);
+    return { key, label: monthLabel(key), a,
+      breaks: sel.filter(iv => iv.brk).length,
+      partial: a ? a.days < 20 : false };
+  });
+
+  // периоды: прошлый год, 1-е полугодие текущего, с июля текущего
+  const lastDate = snaps[snaps.length - 1].date;
+  const curY = +lastDate.slice(0, 4);
+  const lastMonth = +lastDate.slice(5, 7);
+  const mShort = monthLabel(monthKey(lastDate)).slice(0, 3);
+  const inRange = (f, t) => ivs.filter(iv => iv.to >= f && iv.to <= t);
+  const periods = [];
+  const push = (f, t, label) => { const a = agg(inRange(f, t)); if (a) periods.push({ label, a }); };
+  push((curY - 1) + '-01-01', (curY - 1) + '-12-31', (curY - 1) + ' год');
+  if (lastMonth > 6){
+    push(curY + '-01-01', curY + '-06-30', 'янв–июн ' + curY);
+    push(curY + '-07-01', curY + '-12-31', 'июл–' + mShort + ' ' + curY);
+  } else {
+    push(curY + '-01-01', curY + '-12-31', 'янв–' + mShort + ' ' + curY);
+  }
+
+  // «сейчас» — последние 90 дней
+  const cutoff90 = new Date(new Date(lastDate) - 90 * 86400000).toISOString().slice(0, 10);
+  const now = agg(ivs.filter(iv => iv.to >= cutoff90));
+
+  // порог безубыточности: косвенные ÷ (наценка − 1), наценка — за последние 12 мес
+  const cutoff12 = new Date(new Date(lastDate) - 365 * 86400000).toISOString().slice(0, 10);
+  const y12 = agg(ivs.filter(iv => iv.to >= cutoff12));
+  const markupRef = (y12 && y12.markup > 1) ? y12.markup : kAvg;
+  const breakeven = markupRef > 1 ? IND / (markupRef - 1) : null;
+  const prevYear = (periods.length && periods[0].label.startsWith(String(curY - 1))) ? periods[0].a : null;
+
+  return { periods, monthRows, now, IND, kAvg, markupRef, breakeven, prevYear, lastDate };
+}
+
+function renderProdEcon(){
+  const kpi = document.getElementById('prodEconKpi');
+  const tblWrap = document.getElementById('prodEconTbl');
+  const mWrap = document.getElementById('prodEconMonths');
+  const note = document.getElementById('prodEconNote');
+  if (!kpi) return;
+  let res;
+  try { res = computeProdEcon(); }
+  catch(e){
+    // Первая отрисовка идёт из роутера до инициализации констант ядра (TDZ) —
+    // откладываем на тик, когда скрипт дочитан. Повторная ошибка — уже настоящая.
+    if (!renderProdEcon.__retried){ renderProdEcon.__retried = true; setTimeout(renderProdEcon, 0); return; }
+    console.warn('[Экономика] расчёт не удался:', e);
+    kpi.innerHTML = ''; mWrap.innerHTML = ''; note.textContent = '';
+    tblWrap.innerHTML = emptyState('Не удалось рассчитать — обновите страницу');
+    return;
+  }
+  window.__prodEcon = res;
+  if (!res || !res.periods.length){
+    kpi.innerHTML = ''; mWrap.innerHTML = ''; note.textContent = '';
+    tblWrap.innerHTML = emptyState('Нужно минимум три снимка выгрузки');
+    return;
+  }
+  const M1 = v => (v / 1e6).toFixed(1).replace('.', ',');
+  const M2 = v => (v / 1e6).toFixed(2).replace('.', ',');
+  const F2 = v => v.toFixed(2).replace('.', ',');
+  const kzCol = kz => kz == null ? 'var(--t3)' : kz < 0.9 ? 'var(--ok)' : kz <= 1.05 ? 'var(--warn)' : 'var(--danger)';
+  const mgCol = m => m >= 0 ? 'var(--ok)' : 'var(--danger)';
+  const sign = m => (m >= 0 ? '+' : '−') + M1(Math.abs(m));
+
+  // KPI-карточки: темп сейчас, kз, маржа, порог
+  const now = res.now;
+  const cards = [];
+  if (now){
+    cards.push(`<div class="chbox" title="Прирост ССФакт за последние 90 дней, приведённый к месяцу">
+      <b>${M1(now.ssm)} млн ₽</b><div class="sub">переваривает сейчас, прямых/мес<br>выпуск ≈ ${M1(now.revm)} млн (×${F2(now.markup)})</div></div>`);
+    cards.push(`<div class="chbox" title="Косвенные ÷ прямые при темпе последних 90 дней. Меньше 1 — объём окупает косвенные; растёт не от дорогого производства, а от малого объёма">
+      <b style="color:${kzCol(now.kz)}">${F2(now.kz)}</b><div class="sub">факт. kз сейчас${res.prevYear && res.prevYear.kz ? `<br>${res.periods[0].label}: ${F2(res.prevYear.kz)}` : ''}</div></div>`);
+    cards.push(`<div class="chbox"><b style="color:${mgCol(now.margin)}">${sign(now.margin)} млн ₽</b>
+      <div class="sub">маржа производства/мес<br>выпуск − прямые − косвенные</div></div>`);
+  }
+  if (res.breakeven){
+    const gap = now ? now.ssm - res.breakeven : null;
+    cards.push(`<div class="chbox${gap != null && gap < 0 ? ' warn' : ''}" title="Косвенные ÷ (наценка − 1); наценка средняя по переваренному за последние 12 мес (×${F2(res.markupRef)})">
+      <b>${M1(res.breakeven)} млн ₽</b><div class="sub">порог безубыточности, прямых/мес${gap != null ? `<br>${gap >= 0 ? 'запас +' + M1(gap) : 'не хватает ' + M1(-gap)} млн/мес` : ''}</div></div>`);
+  }
+  kpi.innerHTML = cards.join('');
+
+  // таблица периодов
+  const trEcon = (label, a, extra) => `<tr${extra || ''}>
+    <td style="text-align:left">${label}</td>
+    <td>${M2(a.ssm)}</td><td>${M2(a.revm)}</td><td>×${F2(a.markup)}</td>
+    <td style="font-weight:600;color:${kzCol(a.kz)}">${F2(a.kz)}</td>
+    <td style="font-weight:600;color:${mgCol(a.margin)}">${sign(a.margin)}</td></tr>`;
+  tblWrap.innerHTML = `<table>
+    <tr><th style="text-align:left">Период</th>
+      <th title="Прирост ССФакт, приведённый к месяцу">Прямых, млн/мес</th>
+      <th title="Прямые × наценка договора">Выпуск, млн/мес</th>
+      <th title="Выпуск ÷ прямые">Наценка</th>
+      <th title="Косвенные ÷ прямые">Факт. kз</th>
+      <th title="Выпуск − прямые − косвенные">Маржа, млн/мес</th></tr>
+    ${res.periods.map(p => trEcon(p.label, p.a)).join('')}</table>`;
+
+  // помесячная детализация (последние 12 месяцев с данными)
+  const mr = res.monthRows.filter(r => r.a || r.breaks).slice(-12);
+  mWrap.innerHTML = `<table>
+    <tr><th style="text-align:left">Месяц</th><th>Прямых, млн/мес</th><th>Выпуск, млн/мес</th><th>Наценка</th><th>Факт. kз</th><th>Маржа, млн/мес</th></tr>
+    ${mr.map(r => {
+      const lbl = r.label + (r.breaks ? ' ⚡' : '');
+      if (!r.a) return `<tr style="color:var(--t3);font-style:italic"><td style="text-align:left">${lbl}</td><td colspan="5">разрыв ряда — прирост не вычислим</td></tr>`;
+      const st = r.partial ? ' style="font-style:italic;color:var(--t2)" title="Месяц покрыт снимками меньше чем на 20 дней — темп оценочный"' : '';
+      return trEcon(lbl, r.a, st);
+    }).join('')}</table>`;
+
+  note.innerHTML = `Косвенные ${sep(res.IND)} ₽/мес — из настроек Главной. Выпуск — оценка в отпускных ценах, не выручка. ⚠️ Сдельная ЗП разносится с лагом: последние месяцы могут занижать прямые и завышать kз.`;
+}
+
 function renderCycle(){
   const kpi = document.getElementById('cycleKpi');
   const spd = document.getElementById('cycleSpeed');
   const wrap = document.getElementById('cycleTableWrap');
   const coh = document.getElementById('cycleCohorts');
+  renderProdEcon();
   const res = computeLifecycle();
   window.__cycle = res;
   if (!res){ kpi.innerHTML = ''; wrap.innerHTML = emptyState('Нужно минимум два импорта'); spd.textContent = ''; coh.innerHTML = ''; return; }
