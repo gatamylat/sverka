@@ -593,6 +593,9 @@ body { padding-top: 70px; }
 .cy-badge{display:inline-block;padding:2px 9px;border-radius:100px;font-size:11px;font-weight:500;color:#fff;white-space:nowrap}
 .cy-wait{background:#8A8985}.cy-bought{background:#E89A0A}.cy-active{background:#2EBD52}.cy-stuck{background:#E8453A}.cy-tail{background:#A855C7}
 #cycleTableWrap td{vertical-align:middle}
+#cycleTableWrap table tr:nth-child(even):not(:first-child) td{background:rgba(40,35,20,.035)}
+#cycleTableWrap table tr:hover:not(:first-child) td{background:var(--acc-bg)}
+.cy-th-tip{cursor:help;text-decoration:underline dotted rgba(40,35,20,.35);text-underline-offset:3px}
 #cycleTableWrap .cy-note{min-width:160px;text-align:left;cursor:text}
 #cycleTableWrap .cy-note:empty::before{content:'—';color:var(--t3)}
 #cycleTableWrap .cy-note:focus{outline:1.5px solid var(--acc);border-radius:4px}
@@ -1122,13 +1125,13 @@ td.spark-cell canvas{display:block}
         <div class="ch-how-body">
           <p><b>Стадии</b> определяются по траектории ССФакт договора в архиве:</p>
           <p>⚪ <b>Ждёт старта</b> — затрат ещё нет: согласование, РД, очередь на закупку.<br>
-          🟠 <b>Закуплено, ждёт</b> — был один-два всплеска затрат (обычно закупка материалов) и затем тишина ≥8 недель.<br>
+          🟠 <b>Закуплено, ждёт</b> — был один-два всплеска затрат (обычно закупка материалов, возможно частичная) и затем тишина ≥8 недель. Деньги уже вложены в материал, который лежит и может терять кондицию.<br>
           🟢 <b>В работе</b> — затраты идут, движение было в последние 8 недель.<br>
           🔴 <b>Застряло в работе</b> — производство начато (затраты шли не раз), но движения нет ≥8 недель.<br>
           🟣 <b>Хвост</b> — готовность ≥80%: монтаж, доделки, мелкие доборы.</p>
           <p><b>Причины остановок</b> из данных не видны (стройготовность, согласование чертежей, приоритеты цеха) — пишите их в «Прим.» прямо в таблице, они сохраняются в Справочник.</p>
           <p><b>Скорость чистого производства</b> — медиана прироста затрат в % от плановой себестоимости за месяц, только по интервалам, где затраты реально шли. Показывает, быстрее или медленнее прошлогоднего пилится ОДИН заказ, без учёта простоев.</p>
-          <p><b>Траектория</b> в строке — готовность 0→100% по снимкам архива.</p>
+          <p><b>Готовность</b> = ССФакт ÷ плановая СС. <b>Остаток СС</b> = плановая СС − ССФакт. <b>Без движения</b> — дней без изменения ССФакт. <b>Траектория</b> — готовность 0→100% по снимкам архива.</p>
         </div>
       </details>
     </div>
@@ -4866,8 +4869,20 @@ function renderCycle(){
   // таблица
   const tbl = document.createElement('table');
   const trh = document.createElement('tr');
-  ['Договор','Канал','Стадия','Готовность','Остаток','Без движения','Траектория','Прим.'].forEach(h =>
-    trh.appendChild(Object.assign(document.createElement('th'), { textContent: h })));
+  [['Договор',''],
+   ['Канал','Прямой заказчик или через посредника — флаг «Прямой» в Справочнике'],
+   ['Стадия','Определяется по траектории ССФакт — см. «ⓘ как читать»'],
+   ['Готовность','ССФакт ÷ плановая СС (при её отсутствии — предварительная). Сколько себестоимости уже проведено'],
+   ['Остаток СС','Плановая СС − ССФакт: сколько себестоимости осталось провести до готовности'],
+   ['Без движения','Дней с последнего изменения ССФакт больше чем на 20 тыс. (для «ждёт старта» — дней с появления в выгрузке)'],
+   ['Траектория','Готовность 0→100% по снимкам архива; наведите — детали'],
+   ['Прим.','Редактируется здесь, сохраняется в Справочник — фиксируйте причину остановки']
+  ].forEach(([h, tip]) => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    if (tip){ th.title = tip; th.className = 'cy-th-tip'; }
+    trh.appendChild(th);
+  });
   tbl.appendChild(trh);
   const sorted = [...res.rows].sort((a, b) =>
     CY_STAGES[a.stage].order - CY_STAGES[b.stage].order || b.ost - a.ost);
@@ -4879,7 +4894,9 @@ function renderCycle(){
     tdN.textContent = r.num + (info.exists && info.name ? ' · ' + info.name : '');
     tr.appendChild(tdN);
     const tdC = document.createElement('td');
-    tdC.textContent = isDirectContract(r.num) ? 'прямой' : 'непрям.';
+    const dirFlag = isDirectContract(r.num);
+    tdC.textContent = dirFlag ? 'прямой' : 'непрям.';
+    tdC.style.cssText = 'font-weight:600;color:' + (dirFlag ? '#1A7AE6' : '#A68960');
     tr.appendChild(tdC);
     const tdS = document.createElement('td');
     tdS.style.textAlign = 'left';
