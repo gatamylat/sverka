@@ -886,6 +886,9 @@ td.spark-cell canvas{display:block}
       <h2>Справочник договоров</h2>
       <p class="hint">Управление наименованиями и примечаниями договоров</p>
       <input type="text" class="directory-search" id="dirSearch" placeholder="Поиск по ID, названию или примечанию...">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;margin-top:6px;cursor:pointer">
+        <input type="checkbox" id="dirOnlyUnnamed"> только без наименования
+      </label>
     </div>
 
     <!-- Форма добавления -->
@@ -3668,6 +3671,7 @@ const importJSON = file => {
       }
       
       // Обновляем интерфейс
+      syncDirectoryFromArchive(); // бэкап мог принести договоры, которых нет в справочнике
       renderArchive();
       buildHistory();
       renderCoefImportsArchive();
@@ -5614,10 +5618,12 @@ function renderDirectoryTable() {
   let withNames = 0;
   
   let directCount = 0;
-  Object.entries(contractsDirectory).forEach(([id, info]) => {
+  const onlyUnnamed = !!document.getElementById('dirOnlyUnnamed')?.checked;
+  Object.entries(contractsDirectory).sort(([a],[b]) => a.localeCompare(b, 'ru')).forEach(([id, info]) => {
     // Фильтрация по поиску
     const searchStr = `${id} ${info.name} ${info.comment}`.toLowerCase();
     if (searchQuery && !searchStr.includes(searchQuery)) return;
+    if (onlyUnnamed && info.name) return;
     
     count++;
     if (info.name) withNames++;
@@ -6311,10 +6317,29 @@ document.addEventListener('DOMContentLoaded', () => {
   if (dirSearch) {
     dirSearch.addEventListener('input', renderDirectoryTable);
   }
+  const dirOnly = document.getElementById('dirOnlyUnnamed');
+  if (dirOnly) dirOnly.addEventListener('change', renderDirectoryTable);
 });
 
 /* ---------- init ---------- */
+/* Справочник должен содержать каждый договор, когда-либо встречавшийся в архиве:
+   автодобавление раньше срабатывало только при импорте, и договоры, ушедшие из
+   выгрузок до появления справочника, в него не попадали — их нельзя было разметить. */
+function syncDirectoryFromArchive(){
+  let added = 0;
+  try {
+    store.forEach(imp => (imp.data || []).forEach(r => {
+      const n = String(r.Номер).trim();
+      if (n && !contractsDirectory[n]){ contractsDirectory[n] = { name: '', comment: '' }; added++; }
+    }));
+    if (added) saveContractsDirectory();
+  } catch(e){}
+  return added;
+}
+
 function init() {
+  const __dirAdded = syncDirectoryFromArchive();
+  if (__dirAdded) setTimeout(() => showToast(`Справочник дополнен из архива: +${__dirAdded} договоров (без наименований)`, 'success'), 400);
   renderArchive();
   buildHistory();
   renderNumList();
